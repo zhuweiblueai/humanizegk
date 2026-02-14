@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Humanize - Grok</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="ink-bg" aria-hidden="true"></div>
+
+    <main class="app-shell">
+      <header class="hero">
+        <p class="hero-sub">VIDEO GENERATION PLATFORM</p>
+        <h1>Humanize - Grok</h1>
+        <p>
+          Generate production-ready videos from prompt and optional reference image.
+          Configure duration, resolution, and aspect ratio with full request visibility.
+        </p>
+      </header>
+
+      <section class="panel">
+        <form id="generateForm" class="form-grid">
+          <label>
+            Prompt
+            <textarea
+              name="prompt"
+              rows="4"
+              placeholder="Example: Keep the same subject and outfit from the reference image, with subtle motion only."
+              required
+            ></textarea>
+          </label>
+
+          <label>
+            Reference Image (optional)
+            <input type="file" name="image" accept="image/*" />
+          </label>
+
+          <div class="triple-grid">
+            <label>
+              Duration (seconds)
+              <select name="duration" required>
+                <option value="4">4s</option>
+                <option value="6">6s</option>
+                <option value="8" selected>8s</option>
+                <option value="10">10s</option>
+                <option value="12">12s</option>
+                <option value="15">15s</option>
+              </select>
+            </label>
+
+            <label>
+              Resolution
+              <select name="resolution" required>
+                <option value="480p">480p</option>
+                <option value="720p" selected>720p</option>
+              </select>
+            </label>
+
+            <label>
+              Aspect Ratio
+              <select name="aspect_ratio" required>
+                <option value="auto" selected>Follow Reference (Recommended)</option>
+                <option value="16:9">16:9 Landscape</option>
+                <option value="9:16">9:16 Portrait</option>
+                <option value="1:1">1:1 Square</option>
+                <option value="4:3">4:3</option>
+                <option value="3:4">3:4</option>
+                <option value="3:2">3:2</option>
+                <option value="2:3">2:3</option>
+              </select>
+            </label>
+          </div>
+
+          <button type="submit">Generate Video</button>
+        </form>
+      </section>
+
+      <section id="requestPreviewBox" class="result hidden">
+        <h2>Request Sent To Grok</h2>
+        <pre id="requestPreviewContent"></pre>
+      </section>
+
+      <section id="statusBox" class="status hidden"></section>
+
+      <section id="resultBox" class="result hidden">
+        <h2>Result</h2>
+        <a id="downloadLink" target="_blank" rel="noreferrer">Open video URL</a>
+        <video id="videoPlayer" controls playsinline></video>
+      </section>
+    </main>
+
+    <script src="/main.js"></script>
+  </body>
+</html>
