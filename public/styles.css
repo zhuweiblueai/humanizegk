@@ -112,6 +112,7 @@ label {
 
 textarea,
 select,
+input[type="password"],
 input[type="file"] {
   width: 100%;
   border: 1px solid rgba(118, 152, 198, 0.32);
@@ -125,6 +126,7 @@ input[type="file"] {
 
 textarea:focus,
 select:focus,
+input[type="password"]:focus,
 input[type="file"]:focus {
   outline: none;
   border-color: var(--primary);
@@ -170,6 +172,19 @@ button:disabled {
   box-shadow: none;
 }
 
+.secondary-btn {
+  background: transparent;
+  border: 1px solid rgba(114, 154, 205, 0.5);
+  color: #cbe2ff;
+  box-shadow: none;
+}
+
+.secondary-btn:hover {
+  filter: none;
+  border-color: rgba(114, 154, 205, 0.85);
+  background: rgba(16, 34, 57, 0.6);
+}
+
 .status,
 .result {
   margin-top: 14px;
@@ -200,6 +215,34 @@ button:disabled {
   color: var(--primary);
   word-break: break-all;
   font-weight: 600;
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.history-card {
+  border: 1px solid rgba(114, 154, 205, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(8, 21, 38, 0.72);
+}
+
+.history-card h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.history-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 12px;
+}
+
+.muted {
+  color: var(--muted);
 }
 
 pre {

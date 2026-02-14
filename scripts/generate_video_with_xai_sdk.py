@@ -219,6 +219,10 @@ def main():
     with open(args.request_json_path, "r", encoding="utf-8") as f:
         req = json.load(f)
 
+    api_key = (req.get("api_key") or "").strip()
+    if not api_key:
+        raise ValueError("api_key is required")
+
     prompt = (req.get("prompt") or "").strip()
     if not prompt:
         raise ValueError("prompt is required")
@@ -252,13 +256,11 @@ def main():
         mime = mimetypes.guess_type(image_path)[0] or "image/png"
         kwargs["image_url"] = f"data:{mime};base64,{image_data}"
 
-    client = xai_sdk.Client(api_key=os.getenv("XAI_API_KEY"))
+    client = xai_sdk.Client(api_key=api_key)
     response = client.video.generate(**kwargs)
     video_url = extract_url_from_any(response)
     request_id = extract_request_id_from_any(response)
 
-    # Fallback: if SDK returns a deferred object without a final URL,
-    # poll manually by request_id to ensure we eventually get response.video.url.
     if not video_url and request_id:
         deadline = datetime.utcnow() + timedelta(minutes=10)
         while datetime.utcnow() < deadline:

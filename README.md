@@ -2,11 +2,12 @@
 
 AI video generation web app (Node + Python xAI SDK) with optional reference image upload.
 
-## What it does
+## Current workflow
 
-- Prompt-to-video and image-to-video
-- Shows `Request Sent To Grok` on the page
-- Cross-platform image padding via Pillow to avoid stretching when aspect ratio is forced
+- User must input `XAI API Key` in the page before any action.
+- Upload image and click `Auto-generate TikTok Prompt` to generate a product-selling prompt.
+- Generate video with selected duration, resolution, and aspect ratio.
+- All generated videos are listed in the history section with play + download actions.
 
 ## Local run
 
@@ -26,8 +27,8 @@ cp .env.example .env
 `.env` example:
 
 ```env
-XAI_API_KEY=your_xai_api_key_here
 XAI_VIDEO_MODEL=grok-imagine-video
+AUTO_PROMPT_MODEL=grok-2-vision-latest
 IMAGE_PAD_COLOR=FFFFFF
 PORT=3000
 ```
@@ -40,33 +41,18 @@ npm run dev
 
 Open `http://localhost:3000`
 
-## Deploy to public internet (no domain required) - Render free subdomain
+## Deploy (Render, no custom domain needed)
 
-This deploy path gives you a public URL like `https://your-app.onrender.com`.
-
-1. Push this project to GitHub.
-2. Go to Render and create a **New Web Service**.
-3. Connect your GitHub repo.
-4. In service settings:
-- Runtime: `Docker`
-- Branch: your main branch
-- Region: nearest to your users
-5. Add environment variables in Render:
-- `XAI_API_KEY`
+1. Push code to GitHub.
+2. Create Render Web Service using `Docker` runtime.
+3. Add env vars:
 - `XAI_VIDEO_MODEL=grok-imagine-video`
+- `AUTO_PROMPT_MODEL=grok-2-vision-latest`
 - `IMAGE_PAD_COLOR=FFFFFF`
 - `PORT=3000`
-6. Click **Deploy**.
-7. Open the generated `*.onrender.com` URL.
-
-## Files for deployment
-
-- `Dockerfile`
-- `.dockerignore`
-- `requirements.txt`
+4. Deploy and use the generated `*.onrender.com` URL.
 
 ## Notes
 
-- Pillow-based padding runs in Python script `scripts/generate_video_with_xai_sdk.py`.
-- If `aspect_ratio=auto`, app does not force ratio for reference-image mode.
-- If you later buy a domain, attach it in Render Custom Domains settings.
+- The API key is provided per request from the UI and is not read from server env for generation.
+- Pillow handles cross-platform image padding before video generation.

@@ -3,7 +3,6 @@ const multer = require("multer");
 const path = require("path");
 const os = require("os");
 const fs = require("fs/promises");
-const crypto = require("crypto");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
 require("dotenv").config();
@@ -15,22 +14,14 @@ const execFileAsync = promisify(execFile);
 const PORT = process.env.PORT || 3000;
 const XAI_VIDEO_MODEL = process.env.XAI_VIDEO_MODEL || "grok-imagine-video";
 const IMAGE_PAD_COLOR = process.env.IMAGE_PAD_COLOR || "FFFFFF";
+const XAI_BASE_URL = "https://api.x.ai/v1";
+const AUTO_PROMPT_MODEL = process.env.AUTO_PROMPT_MODEL || "grok-2-vision-latest";
 
 const ALLOWED_RESOLUTIONS = new Set(["480p", "720p"]);
 const ALLOWED_ASPECT_RATIOS = new Set(["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"]);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
-
-function assertApiKey(res) {
-  if (!process.env.XAI_API_KEY) {
-    res.status(500).json({
-      error: "Missing XAI_API_KEY. Add it to your .env file."
-    });
-    return false;
-  }
-  return true;
-}
 
 function normalizeDuration(value) {
   const duration = Number.parseInt(String(value || ""), 10);
@@ -39,28 +30,19 @@ function normalizeDuration(value) {
   return duration;
 }
 
-function buildRequestPreview(payload, file) {
-  const preview = { ...payload };
-  if (!file) return preview;
-
-  const sha256 = crypto.createHash("sha256").update(file.buffer).digest("hex");
-  preview.image_url = {
-    type: "data-uri",
-    mime: file.mimetype || "application/octet-stream",
-    bytes: file.size || file.buffer.length || 0,
-    sha256
-  };
-
-  delete preview.image_path;
-  return preview;
-}
-
 function extractVideoUrl(payload) {
   if (typeof payload?.video?.url === "string") return payload.video.url;
   if (typeof payload?.response?.video?.url === "string") return payload.response.video.url;
   if (typeof payload?.video_url === "string") return payload.video_url;
   if (typeof payload?.url === "string") return payload.url;
   return null;
+}
+
+function toDataUri(file) {
+  if (!file) return null;
+  const mimeType = file.mimetype || "image/png";
+  const base64 = file.buffer.toString("base64");
+  return `data:${mimeType};base64,${base64}`;
 }
 
 async function generateVideoWithSdk(payload) {
@@ -87,8 +69,77 @@ async function generateVideoWithSdk(payload) {
   }
 }
 
+app.post("/api/auto-prompt", upload.single("image"), async (req, res) => {
+  const apiKey = String(req.body.api_key || "").trim();
+  const image = req.file;
+
+  if (!apiKey) {
+    return res.status(400).json({ error: "api_key is required." });
+  }
+  if (!image) {
+    return res.status(400).json({ error: "image is required." });
+  }
+
+  try {
+    const imageUrl = toDataUri(image);
+
+    const response = await fetch(`${XAI_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: AUTO_PROMPT_MODEL,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an expert TikTok commerce video director. Output only one concise English prompt for text-to-video/image-to-video generation."
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text:
+                  "Based on this product image, create one concise prompt for a TikTok product-selling short video. Include hook, camera movement, key product highlights, CTA, and trendy e-commerce style."
+              },
+              {
+                type: "image_url",
+                image_url: { url: imageUrl }
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json({
+        error: data?.error?.message || "Failed to auto-generate prompt.",
+        raw: data
+      });
+    }
+
+    const prompt = String(data?.choices?.[0]?.message?.content || "").trim();
+    if (!prompt) {
+      return res.status(502).json({ error: "Model returned empty prompt.", raw: data });
+    }
+
+    return res.json({ prompt, model: AUTO_PROMPT_MODEL });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/generate-video", upload.single("image"), async (req, res) => {
-  if (!assertApiKey(res)) return;
+  const apiKey = String(req.body.api_key || "").trim();
+  if (!apiKey) {
+    return res.status(400).json({ error: "api_key is required." });
+  }
 
   const prompt = String(req.body.prompt || "").trim();
   const duration = normalizeDuration(req.body.duration);
@@ -128,6 +179,7 @@ app.post("/api/generate-video", upload.single("image"), async (req, res) => {
     }
 
     const sdkPayload = {
+      api_key: apiKey,
       prompt,
       model: XAI_VIDEO_MODEL,
       duration,
@@ -138,7 +190,6 @@ app.post("/api/generate-video", upload.single("image"), async (req, res) => {
     if (imagePath) sdkPayload.image_path = imagePath;
     if (imagePath) sdkPayload.image_pad_color = IMAGE_PAD_COLOR;
 
-    const requestPreview = buildRequestPreview(sdkPayload, req.file);
     const sdkResult = await generateVideoWithSdk(sdkPayload);
     const videoUrl = extractVideoUrl(sdkResult);
     imagePreprocess = sdkResult?.image_preprocess || { padded: false };
@@ -146,7 +197,6 @@ app.post("/api/generate-video", upload.single("image"), async (req, res) => {
     if (!videoUrl) {
       return res.status(502).json({
         error: "SDK call completed but no video URL was returned.",
-        request_preview: requestPreview,
         raw: sdkResult?.raw || sdkResult
       });
     }
@@ -163,7 +213,6 @@ app.post("/api/generate-video", upload.single("image"), async (req, res) => {
       duration,
       resolution,
       aspect_ratio: effectiveAspectRatio || "follow-input-image",
-      request_preview: requestPreview,
       raw: sdkResult?.raw || sdkResult
     });
   } catch (error) {
