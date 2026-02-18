@@ -93,6 +93,50 @@ function prependHistoryItem(item) {
   renderHistory();
 }
 
+async function createVideoWithFormData(formData) {
+  const createRes = await fetch("/api/generate-video", {
+    method: "POST",
+    body: formData
+  });
+  const createData = await createRes.json();
+  if (!createRes.ok) {
+    throw new Error(createData.error || "Failed to create task");
+  }
+  if (!createData.video_url) {
+    throw new Error("No video URL returned by xai_sdk call");
+  }
+  return createData;
+}
+
+async function autoGenerateThreeVideos() {
+  const promptField = generateForm.querySelector("textarea[name='prompt']");
+  const basePrompt = String(promptField.value || "").trim();
+  if (!basePrompt) throw new Error("Prompt is empty.");
+
+  const variants = [
+    "Version 1: hook-focused opening shot.",
+    "Version 2: close-up detail showcase shot.",
+    "Version 3: CTA-focused conversion ending shot."
+  ];
+
+  for (let i = 0; i < variants.length; i += 1) {
+    const formData = new FormData(generateForm);
+    formData.set("prompt", `${basePrompt}\n${variants[i]}`);
+
+    setStatus(`Auto-generating video ${i + 1}/3...`);
+    const createData = await createVideoWithFormData(formData);
+
+    showResult(createData.video_url);
+    prependHistoryItem({
+      video_url: createData.video_url,
+      duration: createData.duration,
+      resolution: createData.resolution,
+      aspect_ratio: createData.aspect_ratio,
+      created_at: new Date().toISOString()
+    });
+  }
+}
+
 async function generateAutoPrompt() {
   const formData = new FormData(generateForm);
   const apiKey = String(formData.get("api_key") || "").trim();
@@ -125,10 +169,15 @@ async function generateAutoPrompt() {
 imageInput.addEventListener("change", async () => {
   if (!imageInput.files?.length) return;
   try {
+    setBusy(generateForm, true);
     setStatus("Generating TikTok product-selling prompt from image...");
     await generateAutoPrompt();
+    await autoGenerateThreeVideos();
+    setStatus("Done. 3 videos generated automatically.");
   } catch (error) {
     setStatus(`Error: ${error.message}`, "error");
+  } finally {
+    setBusy(generateForm, false);
   }
 });
 
@@ -141,19 +190,7 @@ generateForm.addEventListener("submit", async (event) => {
 
     setStatus("Submitting video generation request...");
 
-    const createRes = await fetch("/api/generate-video", {
-      method: "POST",
-      body: formData
-    });
-    const createData = await createRes.json();
-
-    if (!createRes.ok) {
-      throw new Error(createData.error || "Failed to create task");
-    }
-
-    if (!createData.video_url) {
-      throw new Error("No video URL returned by xai_sdk call");
-    }
+    const createData = await createVideoWithFormData(formData);
 
     setStatus(
       `Video generated (${createData.duration}s / ${createData.resolution} / aspect: ${createData.aspect_ratio} / reference: ${createData.has_reference_image ? `uploaded ${createData.uploaded_image_mime || ""} ${createData.uploaded_image_bytes || 0}B` : "not uploaded"}${createData.image_preprocess?.padded ? ` / padded to ${createData.image_preprocess.target_width}x${createData.image_preprocess.target_height}` : ""}).`

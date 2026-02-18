@@ -16,6 +16,8 @@ const XAI_VIDEO_MODEL = process.env.XAI_VIDEO_MODEL || "grok-imagine-video";
 const IMAGE_PAD_COLOR = process.env.IMAGE_PAD_COLOR || "FFFFFF";
 const XAI_BASE_URL = "https://api.x.ai/v1";
 const AUTO_PROMPT_MODEL = process.env.AUTO_PROMPT_MODEL || "grok-2-vision-latest";
+const TIKTOK_MY_REQUIREMENTS =
+  "This is for TikTok Malaysia market. Use Malay people as on-screen characters. Spoken voice-over language must be Bahasa Melayu (Malay).";
 
 const ALLOWED_RESOLUTIONS = new Set(["480p", "720p"]);
 const ALLOWED_ASPECT_RATIOS = new Set(["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"]);
@@ -101,10 +103,10 @@ app.post("/api/auto-prompt", upload.single("image"), async (req, res) => {
           {
             role: "user",
             content: [
-              {
+                  {
                 type: "text",
                 text:
-                  "Based on this product image, create one concise prompt for a TikTok product-selling short video. Include hook, camera movement, key product highlights, CTA, and trendy e-commerce style."
+                  "Based on this product image, create one concise prompt for a TikTok product-selling short video. Include hook, camera movement, key product highlights, CTA, and trendy e-commerce style. Hard requirements: TikTok Malaysia market, Malay people as characters, Malay language voice-over."
               },
               {
                 type: "image_url",
@@ -129,7 +131,8 @@ app.post("/api/auto-prompt", upload.single("image"), async (req, res) => {
       return res.status(502).json({ error: "Model returned empty prompt.", raw: data });
     }
 
-    return res.json({ prompt, model: AUTO_PROMPT_MODEL });
+    const finalPrompt = `${prompt}\n${TIKTOK_MY_REQUIREMENTS}`;
+    return res.json({ prompt: finalPrompt, model: AUTO_PROMPT_MODEL });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
