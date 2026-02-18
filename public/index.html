@@ -28,7 +28,18 @@
       <section class="panel">
         <form id="generateForm" class="form-grid">
           <label>
-            XAI API Key
+            OpenAI API Key (for prompt generation)
+            <input
+              type="password"
+              name="openai_api_key"
+              placeholder="sk-..."
+              autocomplete="off"
+              required
+            />
+          </label>
+
+          <label>
+            XAI API Key (for video generation)
             <input
               type="password"
               name="api_key"
@@ -44,21 +55,16 @@
           </label>
 
           <label>
-            Prompt
-            <textarea
-              name="prompt"
-              rows="4"
-              placeholder="Upload an image to auto-generate a TikTok product-selling prompt."
-              required
-            ></textarea>
+            Video Count
+            <input type="number" name="video_count" min="1" max="8" value="3" required />
           </label>
 
           <div class="triple-grid">
             <label>
               Duration (seconds)
               <select name="duration" required>
-                <option value="4">4s</option>
-                <option value="6" selected>6s</option>
+                <option value="4" selected>4s</option>
+                <option value="6">6s</option>
                 <option value="8">8s</option>
                 <option value="10">10s</option>
                 <option value="12">12s</option>
@@ -77,9 +83,9 @@
             <label>
               Aspect Ratio
               <select name="aspect_ratio" required>
-                <option value="auto" selected>Follow Reference (Recommended)</option>
+                <option value="auto">Follow Reference (Recommended)</option>
                 <option value="16:9">16:9 Landscape</option>
-                <option value="9:16">9:16 Portrait</option>
+                <option value="9:16" selected>9:16 Portrait</option>
                 <option value="1:1">1:1 Square</option>
                 <option value="4:3">4:3</option>
                 <option value="3:4">3:4</option>
@@ -88,17 +94,16 @@
               </select>
             </label>
           </div>
-
-          <button type="submit">Generate Video</button>
+          <button id="generatePromptsBtn" class="secondary-btn" type="button">Generate Prompts</button>
         </form>
       </section>
 
       <section id="statusBox" class="status hidden"></section>
 
-      <section id="resultBox" class="result hidden">
-        <h2>Latest Result</h2>
-        <a id="downloadLink" target="_blank" rel="noreferrer">Open video URL</a>
-        <video id="videoPlayer" controls playsinline></video>
+      <section class="result" id="promptPlanSection">
+        <h2>Generated Prompts</h2>
+        <div id="promptPlanList" class="prompt-plan-list"></div>
+        <button id="generateVideoBtn" type="button">Generate Video</button>
       </section>
 
       <section class="result" id="historySection">
