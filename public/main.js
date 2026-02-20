@@ -619,6 +619,105 @@ function dataUriToBlob(dataUri) {
   return new Blob([bytes], { type: mime });
 }
 
+function parseAspectRatioValue(value) {
+  const match = String(value || "")
+    .trim()
+    .match(/^(\d+)\s*:\s*(\d+)$/);
+  if (!match) return null;
+  const width = Number.parseInt(match[1], 10);
+  const height = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return width / height;
+}
+
+async function cropDataUriToAspectRatio(dataUri, aspectRatioValue) {
+  const ratio = parseAspectRatioValue(aspectRatioValue);
+  if (!ratio || !dataUri) return { dataUri, cropped: false };
+
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Failed to load frame image for crop."));
+    img.src = dataUri;
+  });
+
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  if (!sourceWidth || !sourceHeight) return { dataUri, cropped: false };
+
+  const sourceRatio = sourceWidth / sourceHeight;
+  if (Math.abs(sourceRatio - ratio) <= 1e-4) {
+    return { dataUri, cropped: false };
+  }
+
+  let cropWidth = sourceWidth;
+  let cropHeight = sourceHeight;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (sourceRatio > ratio) {
+    cropWidth = Math.max(1, Math.floor(sourceHeight * ratio));
+    offsetX = Math.floor((sourceWidth - cropWidth) / 2);
+  } else {
+    cropHeight = Math.max(1, Math.floor(sourceWidth / ratio));
+    offsetY = Math.floor((sourceHeight - cropHeight) / 2);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = cropWidth;
+  canvas.height = cropHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return { dataUri, cropped: false };
+  context.drawImage(
+    image,
+    offsetX,
+    offsetY,
+    cropWidth,
+    cropHeight,
+    0,
+    0,
+    cropWidth,
+    cropHeight
+  );
+
+  return {
+    dataUri: canvas.toDataURL("image/png"),
+    cropped: true
+  };
+}
+
+async function normalizeExistingFramesToAspectRatio() {
+  const ratioText = String(aspectRatioSelect?.value || "").trim().toLowerCase();
+  if (!ratioText || ratioText === "auto") return;
+  if (!Array.isArray(state.firstFrames) || !state.firstFrames.length) return;
+
+  let changed = false;
+  for (let i = 0; i < state.firstFrames.length; i += 1) {
+    const frame = state.firstFrames[i];
+    if (!frame?.dataUri) continue;
+    const cropResult = await cropDataUriToAspectRatio(frame.dataUri, ratioText);
+    if (!cropResult?.cropped || !cropResult?.dataUri) continue;
+    state.firstFrames[i] = {
+      ...frame,
+      dataUri: cropResult.dataUri,
+      mime: "image/png",
+      debug: {
+        ...(frame.debug || {}),
+        client_aspect_ratio_crop: {
+          applied: true,
+          target_aspect_ratio: ratioText
+        }
+      }
+    };
+    changed = true;
+  }
+
+  if (changed) {
+    renderFirstFrames();
+    renderSnapshot();
+  }
+}
+
 function openImageZoom(dataUri) {
   if (!imageZoomModal || !zoomedImage) return;
   zoomedImage.src = dataUri;
@@ -743,6 +842,19 @@ async function requestFirstFrameAtIndex(index, { force = false } = {}) {
     prompt: normalizePromptText(data.first_frame_prompt || data?.debug?.request?.prompt || data?.debug?.request?.prompt_preview || ""),
     debug: data.debug || null
   };
+
+  const cropResult = await cropDataUriToAspectRatio(frame.dataUri, aspectRatioSelect.value);
+  if (cropResult?.dataUri) {
+    frame.dataUri = cropResult.dataUri;
+    frame.mime = "image/png";
+    frame.debug = {
+      ...(frame.debug || {}),
+      client_aspect_ratio_crop: {
+        applied: Boolean(cropResult.cropped),
+        target_aspect_ratio: aspectRatioSelect.value
+      }
+    };
+  }
 
   if (data?.debug) {
     addModelDebugEvent({
@@ -1135,6 +1247,7 @@ tabStep3.addEventListener("click", () => {
   renderFirstFrames();
   renderModelDebug();
   renderHistory();
+  void normalizeExistingFramesToAspectRatio();
   switchStep(3);
 });
 
@@ -1197,6 +1310,7 @@ generatePromptsBtn.addEventListener("click", async () => {
     renderSnapshot();
     switchStep(3);
     await generateFirstFrames(false);
+    await normalizeExistingFramesToAspectRatio();
     setStatus(`Generated ${state.preparedPrompts.length} scene directions and first frames.`);
   } catch (error) {
     setStatus(`Error: ${error.message}`, "error");

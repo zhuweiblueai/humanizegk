@@ -98,6 +98,24 @@ function detectMimeFromDataUri(dataUri) {
   return match[1];
 }
 
+function decodeDataUri(dataUri) {
+  const match = String(dataUri || "").match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  try {
+    return {
+      mime: match[1] || "image/png",
+      buffer: Buffer.from(match[2], "base64")
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeDataUri(buffer, mime = "image/png") {
+  if (!Buffer.isBuffer(buffer)) return "";
+  return `data:${mime};base64,${buffer.toString("base64")}`;
+}
+
 function parseAspectRatio(value) {
   const match = String(value || "")
     .trim()
@@ -906,6 +924,43 @@ async function generateVideoWithSdk(payload) {
   }
 }
 
+async function cropImageBufferToAspectRatio({ imageBuffer, aspectRatio }) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "image-crop-"));
+  const inputPath = path.join(tempDir, "input.png");
+  const outputPath = path.join(tempDir, "output.png");
+  const scriptPath = path.join(__dirname, "scripts", "crop_image_to_aspect_ratio.py");
+  const ratioRaw = String(aspectRatio || "").trim();
+
+  try {
+    await fs.writeFile(inputPath, imageBuffer);
+
+    const { stdout, stderr } = await execFileAsync(PYTHON_BIN, [scriptPath, inputPath, outputPath, ratioRaw], {
+      env: process.env,
+      maxBuffer: 4 * 1024 * 1024
+    });
+
+    if (stderr && stderr.trim()) {
+      throw new Error(stderr.trim());
+    }
+
+    const croppedBuffer = await fs.readFile(outputPath);
+    let cropMeta = {};
+    try {
+      cropMeta = JSON.parse(String(stdout || "{}").trim() || "{}");
+    } catch {
+      cropMeta = {};
+    }
+
+    return {
+      buffer: croppedBuffer,
+      mime: "image/png",
+      meta: cropMeta
+    };
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
 app.post("/api/auto-prompt", upload.single("image"), async (req, res) => {
   const openaiApiKey = String(req.body.openai_api_key || "").trim();
   const image = req.file;
@@ -916,7 +971,7 @@ app.post("/api/auto-prompt", upload.single("image"), async (req, res) => {
     return res.status(400).json({ error: "openai_api_key is required." });
   }
   if (!image) {
-    return res.status(400).json({ error: "scene first-frame image is required." });
+    return res.status(400).json({ error: "image is required." });
   }
 
   try {
@@ -1549,11 +1604,40 @@ async function generateFirstFrameImage({ openaiApiKey, imageFile, sceneDirection
     throw err;
   }
 
+  const normalizedAspectRatio = String(aspectRatio || "").trim().toLowerCase();
+  let finalDataUri = coerced.dataUri;
+  let finalMime = detectMimeFromDataUri(finalDataUri);
+  let cropMeta = null;
+  if (normalizedAspectRatio && normalizedAspectRatio !== "auto" && parseAspectRatio(normalizedAspectRatio)) {
+    const decoded = decodeDataUri(coerced.dataUri);
+    if (!decoded?.buffer) {
+      const err = new Error("Failed to decode generated first-frame image for aspect-ratio crop.");
+      err.openaiStatus = 502;
+      err.openaiRaw = editCall.data;
+      err.debug = { request: requestPreview, response: responsePreview };
+      throw err;
+    }
+
+    const cropResult = await cropImageBufferToAspectRatio({
+      imageBuffer: decoded.buffer,
+      aspectRatio: normalizedAspectRatio
+    });
+    finalDataUri = encodeDataUri(cropResult.buffer, cropResult.mime);
+    finalMime = cropResult.mime;
+    cropMeta = cropResult.meta || null;
+  }
+
   return {
-    dataUri: coerced.dataUri,
-    mime: detectMimeFromDataUri(coerced.dataUri),
+    dataUri: finalDataUri,
+    mime: finalMime,
     prompt,
-    debug: { request: requestPreview, response: responsePreview }
+    debug: {
+      request: requestPreview,
+      response: {
+        ...responsePreview,
+        aspect_ratio_crop: cropMeta || { applied: false }
+      }
+    }
   };
 }
 
