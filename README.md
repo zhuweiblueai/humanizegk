@@ -15,7 +15,9 @@ AI video generation web app (Node + Python xAI SDK) with optional reference imag
 
 ```bash
 npm install
-python3 -m pip install -r requirements.txt
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
 2. Configure environment:
@@ -56,3 +58,5 @@ Open `http://localhost:3000`
 
 - The API key is provided per request from the UI and is not read from server env for generation.
 - Pillow handles cross-platform image padding before video generation.
+- Server prefers `./.venv/bin/python3` automatically (or set `PYTHON_BIN` to override).
+- `/api/process-product-image` is kept as an optional legacy utility; the active scene pipeline does not use it.

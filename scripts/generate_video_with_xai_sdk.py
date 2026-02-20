@@ -135,6 +135,28 @@ def extract_request_id_from_any(data):
     return None
 
 
+def is_transient_xai_error(error):
+    text = str(error)
+    return (
+        "StatusCode.INTERNAL" in text
+        or "grpc_status:13" in text
+        or "Unable to process your request" in text
+    )
+
+
+def call_with_retry(func, retries=3, base_sleep_seconds=2):
+    last_error = None
+    for attempt in range(retries):
+        try:
+            return func()
+        except Exception as error:
+            last_error = error
+            if not is_transient_xai_error(error) or attempt == retries - 1:
+                raise
+            time.sleep(base_sleep_seconds * (attempt + 1))
+    raise last_error
+
+
 def parse_aspect_ratio(value):
     if not isinstance(value, str):
         return None
@@ -257,14 +279,14 @@ def main():
         kwargs["image_url"] = f"data:{mime};base64,{image_data}"
 
     client = xai_sdk.Client(api_key=api_key)
-    response = client.video.generate(**kwargs)
+    response = call_with_retry(lambda: client.video.generate(**kwargs))
     video_url = extract_url_from_any(response)
     request_id = extract_request_id_from_any(response)
 
     if not video_url and request_id:
         deadline = datetime.utcnow() + timedelta(minutes=10)
         while datetime.utcnow() < deadline:
-            polled = client.video.get(request_id)
+            polled = call_with_retry(lambda: client.video.get(request_id))
             video_url = extract_url_from_any(polled)
             if video_url:
                 response = polled
