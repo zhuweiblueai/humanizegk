@@ -1,25 +1,19 @@
 const statusBox = document.getElementById("statusBox");
 const historyList = document.getElementById("historyList");
-const historyPanel = document.getElementById("historyPanel");
-const toggleHistoryBtn = document.getElementById("toggleHistoryBtn");
+const openHistoryModalBtn = document.getElementById("openHistoryModalBtn");
 const firstFrameList = document.getElementById("firstFrameList");
 const modelDebugBox = document.getElementById("modelDebugBox");
 const modelDebugSection = document.getElementById("modelDebugSection");
 
-const step1Panel = document.getElementById("step1Panel");
 const step2Panel = document.getElementById("step2Panel");
 const step3Panel = document.getElementById("step3Panel");
 
-const tabStep1 = document.getElementById("tabStep1");
 const tabStep2 = document.getElementById("tabStep2");
 const tabStep3 = document.getElementById("tabStep3");
 
-const openaiApiKeyInput = document.getElementById("openaiApiKeyInput");
-const xaiApiKeyInput = document.getElementById("xaiApiKeyInput");
-const toStep2Btn = document.getElementById("toStep2Btn");
-
 const imageInput = document.getElementById("imageInput");
 const videoCountInput = document.getElementById("videoCountInput");
+const targetMarketInput = document.getElementById("targetMarketInput");
 const durationSelect = document.getElementById("durationSelect");
 const resolutionSelect = document.getElementById("resolutionSelect");
 const aspectRatioSelect = document.getElementById("aspectRatioSelect");
@@ -31,25 +25,82 @@ const clearDebugBtn = document.getElementById("clearDebugBtn");
 const imageZoomModal = document.getElementById("imageZoomModal");
 const closeImageZoomBtn = document.getElementById("closeImageZoomBtn");
 const zoomedImage = document.getElementById("zoomedImage");
+const analysisOverlay = document.getElementById("analysisOverlay");
+const analysisOverlayImage = document.getElementById("analysisOverlayImage");
+const openAuthModalBtn = document.getElementById("openAuthModalBtn");
+const accountMenu = document.getElementById("accountMenu");
+const accountMenuBtn = document.getElementById("accountMenuBtn");
+const openAdminModalBtn = document.getElementById("openAdminModalBtn");
+const adminConsoleModal = document.getElementById("adminConsoleModal");
+const closeAdminModalBtn = document.getElementById("closeAdminModalBtn");
+const historyModal = document.getElementById("historyModal");
+const closeHistoryModalBtn = document.getElementById("closeHistoryModalBtn");
+const authModal = document.getElementById("authModal");
+const closeAuthModalBtn = document.getElementById("closeAuthModalBtn");
+const authGuestSection = document.getElementById("authGuestSection");
+const authEmailInput = document.getElementById("authEmailInput");
+const authPasswordInput = document.getElementById("authPasswordInput");
+const authRegisterBtn = document.getElementById("authRegisterBtn");
+const authLoginBtn = document.getElementById("authLoginBtn");
+const authLogoutBtn = document.getElementById("authLogoutBtn");
+const authRefreshBtn = document.getElementById("authRefreshBtn");
+const authUserInfo = document.getElementById("authUserInfo");
+const authBalanceInfo = document.getElementById("authBalanceInfo");
+const openAccountUsageBtn = document.getElementById("openAccountUsageBtn");
+const accountUsageModal = document.getElementById("accountUsageModal");
+const closeAccountUsageModalBtn = document.getElementById("closeAccountUsageModalBtn");
+const accountUsageSummaryModalBox = document.getElementById("accountUsageSummaryModalBox");
+const googleLoginBtn = document.getElementById("googleLoginBtn");
+const adminPanel = document.getElementById("adminPanel");
+const adminRefreshBtn = document.getElementById("adminRefreshBtn");
+const grantUserSelect = document.getElementById("grantUserSelect");
+const grantAmountInput = document.getElementById("grantAmountInput");
+const grantReasonInput = document.getElementById("grantReasonInput");
+const grantCreditsBtn = document.getElementById("grantCreditsBtn");
+const adminSummaryText = document.getElementById("adminSummaryText");
+const adminPricingTableBody = document.getElementById("adminPricingTableBody");
+const adminPricingAlertsBox = document.getElementById("adminPricingAlertsBox");
+const adminAccountsTableBody = document.getElementById("adminAccountsTableBody");
+const adminVideoUserFilter = document.getElementById("adminVideoUserFilter");
+const adminVideosTable = document.getElementById("adminVideosTable");
+const adminVideosTableBody = document.getElementById("adminVideosTableBody");
+const adminVideoDetailBox = document.getElementById("adminVideoDetailBox");
 
 const HISTORY_KEY = "humanize_grok_video_history";
 
 const state = {
   step: 1,
   busy: false,
-  openaiApiKey: "",
-  xaiApiKey: "",
   imageFile: null,
+  targetMarket: "Malaysia",
   preparedPrompts: [],
   scenePlans: [],
   firstFrames: [],
   firstFrameStatuses: [],
   firstFrameTasks: [],
   videoStatuses: [],
+  videoErrors: [],
   sceneVideos: [],
-  historyExpanded: false,
+  historyModalOpen: false,
   modelDebugEvents: [],
-  advancedPanelsVisible: false
+  advancedPanelsVisible: false,
+  analysisOverlayImageUrl: "",
+  resumeGenerateAfterAuth: false,
+  authUser: null,
+  authBalance: "0.0000",
+  hasPlatformOpenAiKey: false,
+  hasPlatformXaiKey: false,
+  googleOAuthEnabled: false,
+  accountUsageLoading: false,
+  accountSummary: null,
+  adminUsers: [],
+  adminAccountsOverview: [],
+  adminAccountsTotals: null,
+  adminDefaultPricing: [],
+  adminPricingAlerts: [],
+  adminVideoEvents: [],
+  adminSelectedVideoDetail: null,
+  adminVideoFilterUserId: ""
 };
 
 function setStatus(message, type = "info") {
@@ -66,11 +117,376 @@ function clearStatus() {
 
 function setBusy(busy) {
   state.busy = busy;
-  toStep2Btn.disabled = busy;
   generatePromptsBtn.disabled = busy;
-  if (toggleHistoryBtn) toggleHistoryBtn.disabled = busy;
+  if (openHistoryModalBtn) openHistoryModalBtn.disabled = busy;
   if (clearDebugBtn) clearDebugBtn.disabled = busy;
   generatePromptsBtn.textContent = busy ? "Processing..." : "Generate Prompts";
+}
+
+function hasAuth() {
+  return Boolean(state.authUser?.id);
+}
+
+function formatUsd(value, digits = 6) {
+  const number = Number.parseFloat(String(value ?? 0));
+  if (!Number.isFinite(number)) return (0).toFixed(digits);
+  return number.toFixed(digits);
+}
+
+function renderAccountUsageModalContent() {
+  if (!accountUsageSummaryModalBox) return;
+  if (state.accountUsageLoading) {
+    accountUsageSummaryModalBox.textContent = "Loading account spending details...";
+    return;
+  }
+
+  const payload = state.accountSummary || null;
+  const summary = payload?.summary || null;
+  const recentUsage = Array.isArray(payload?.recent_usage) ? payload.recent_usage : [];
+  if (!summary) {
+    accountUsageSummaryModalBox.textContent = "No spending details yet.";
+    return;
+  }
+
+  const lines = [
+    `Balance USD: ${formatUsd(summary.balance_usd, 4)}`,
+    `Granted USD: ${formatUsd(summary.granted_usd, 4)}`,
+    `Recharged USD: ${formatUsd(summary.recharged_usd, 4)}`,
+    `Used USD (billed): ${formatUsd(summary.used_usd, 6)}`,
+    `OpenAI Billed USD: ${formatUsd(summary.openai_cost_usd, 6)}`,
+    `xAI Billed USD: ${formatUsd(summary.xai_cost_usd, 6)}`,
+    `Usage Events: ${summary.usage_event_count ?? recentUsage.length ?? 0}`,
+    "",
+    "Recent Usage:"
+  ];
+
+  if (!recentUsage.length) {
+    lines.push("- none");
+  } else {
+    recentUsage.slice(0, 12).forEach((item) => {
+      const timeText = item?.created_at ? new Date(item.created_at).toLocaleString() : "-";
+      const provider = String(item?.provider || "-");
+      const operation = String(item?.operation || "-");
+      const billedUsd = formatUsd(item?.billed_usd, 6);
+      lines.push(`- ${timeText} | ${provider} | ${operation} | billed ${billedUsd}`);
+    });
+  }
+
+  accountUsageSummaryModalBox.textContent = lines.join("\n");
+}
+
+function openAccountUsageModal() {
+  if (!accountUsageModal) return;
+  accountUsageModal.classList.remove("hidden");
+  renderAccountUsageModalContent();
+}
+
+function closeAccountUsageModal() {
+  if (!accountUsageModal) return;
+  accountUsageModal.classList.add("hidden");
+}
+
+async function refreshAccountUsageSummary({ showStatus = false } = {}) {
+  if (!hasAuth()) {
+    state.accountSummary = null;
+    state.accountUsageLoading = false;
+    renderAccountUsageModalContent();
+    return;
+  }
+  state.accountUsageLoading = true;
+  renderAccountUsageModalContent();
+  const res = await fetch("/api/account/summary");
+  const data = await res.json();
+  if (!res.ok) {
+    state.accountUsageLoading = false;
+    renderAccountUsageModalContent();
+    throw new Error(data.error || "Failed to load account spending details.");
+  }
+  state.accountSummary = data || null;
+  state.accountUsageLoading = false;
+  renderAccountUsageModalContent();
+  if (showStatus) setStatus("Account spending details loaded.");
+}
+
+function renderAuthUI() {
+  const authed = hasAuth();
+  if (openAuthModalBtn) openAuthModalBtn.classList.toggle("hidden", authed);
+  if (accountMenu) accountMenu.classList.toggle("hidden", !authed);
+  if (accountMenuBtn) accountMenuBtn.textContent = authed ? state.authUser.email : "Account";
+  if (authGuestSection) authGuestSection.classList.toggle("hidden", authed);
+  if (authUserInfo) {
+    const user = state.authUser;
+    authUserInfo.textContent = user
+      ? `${user.email} | role=${user.role} | verified=${user.email_verified ? "yes" : "no"}`
+      : "";
+  }
+  if (authBalanceInfo) authBalanceInfo.textContent = `${state.authBalance} USD`;
+  if (googleLoginBtn) googleLoginBtn.classList.toggle("hidden", !state.googleOAuthEnabled);
+  const isAdmin = state.authUser?.role === "ADMIN";
+  if (openAdminModalBtn) openAdminModalBtn.classList.toggle("hidden", !isAdmin);
+  if (adminPanel) adminPanel.classList.toggle("hidden", !isAdmin);
+  if (!isAdmin) {
+    state.adminUsers = [];
+    state.adminAccountsOverview = [];
+    state.adminAccountsTotals = null;
+    state.adminDefaultPricing = [];
+    state.adminPricingAlerts = [];
+    state.adminVideoEvents = [];
+    state.adminSelectedVideoDetail = null;
+    state.adminVideoFilterUserId = "";
+    closeAdminModal();
+  }
+  if (!authed) {
+    state.accountUsageLoading = false;
+    state.accountSummary = null;
+    closeAccountUsageModal();
+  }
+  if (openAccountUsageBtn) openAccountUsageBtn.textContent = "View Spending Details";
+  renderAccountUsageModalContent();
+  renderAdminPanel();
+}
+
+async function refreshAuthState(showStatus = false) {
+  const res = await fetch("/api/auth/me");
+  const data = await res.json();
+  state.authUser = data?.authenticated ? data.user : null;
+  state.authBalance = String(data?.balance_usd ?? data?.balance_credits ?? "0.0000");
+  state.hasPlatformOpenAiKey = Boolean(data?.platform_api_keys?.openai);
+  state.hasPlatformXaiKey = Boolean(data?.platform_api_keys?.xai);
+  state.googleOAuthEnabled = Boolean(data?.google_oauth_enabled);
+  renderAuthUI();
+  if (showStatus) {
+    if (!state.authUser) setStatus("Signed out.");
+  }
+  if (state.authUser?.role === "ADMIN") {
+    try {
+      await refreshAdminData();
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  }
+}
+
+function renderAdminPanel() {
+  if (!adminPanel) return;
+  const isAdmin = state.authUser?.role === "ADMIN";
+  if (!isAdmin) return;
+
+  if (adminSummaryText) {
+    const totals = state.adminAccountsTotals || {};
+    const users = Array.isArray(state.adminAccountsOverview) ? state.adminAccountsOverview.length : 0;
+    adminSummaryText.textContent = [
+      `Accounts: ${users}`,
+      `Granted: ${totals.granted_usd || "0.0000"} USD`,
+      `Recharged: ${totals.recharged_usd || "0.0000"} USD`,
+      `Consumed (Billed): ${totals.used_usd || "0.000000"} USD`,
+      `Provider Cost Est.: ${totals.platform_cost_estimated_usd || "0.000000"} USD`,
+      `OpenAI Cost Est.: ${totals.openai_platform_cost_estimated_usd || "0.000000"} USD`,
+      `xAI Cost Est.: ${totals.xai_platform_cost_estimated_usd || "0.000000"} USD`,
+      `Remaining: ${totals.remaining_usd || "0.0000"} USD`
+    ].join(" | ");
+  }
+
+  if (grantUserSelect) {
+    const current = grantUserSelect.value;
+    grantUserSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select user";
+    grantUserSelect.appendChild(placeholder);
+    (state.adminUsers || []).forEach((user) => {
+      const opt = document.createElement("option");
+      opt.value = user.id;
+      const balanceUsd = String(user.balance_usd ?? user.balance_credits ?? "0.0000");
+      const title = user.email || user.username || user.id;
+      opt.textContent = `${title} | ${balanceUsd} USD`;
+      grantUserSelect.appendChild(opt);
+    });
+    if (current) grantUserSelect.value = current;
+  }
+
+  if (adminPricingTableBody) {
+    adminPricingTableBody.innerHTML = "";
+    const rows = (state.adminDefaultPricing || []).slice();
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="9" class="muted">No default pricing rows.</td>';
+      adminPricingTableBody.appendChild(tr);
+    } else {
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(row.provider || "")}</td>
+          <td>${escapeHtml(row.operation || "")}</td>
+          <td>${escapeHtml(row.model || "-")}</td>
+          <td>${escapeHtml(row.unit_type || "")}</td>
+          <td>${escapeHtml(row.cost_price_usd_per_unit || "0")}</td>
+          <td>${escapeHtml(row.default_price_usd_per_unit || "0")}</td>
+          <td>${escapeHtml(row.markup_multiplier || "-")}</td>
+          <td>${escapeHtml(row.gross_margin_usd_per_unit || "0")}</td>
+          <td>${escapeHtml(row.note || "")}</td>
+        `;
+        adminPricingTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  if (adminPricingAlertsBox) {
+    const alerts = Array.isArray(state.adminPricingAlerts) ? state.adminPricingAlerts : [];
+    if (!alerts.length) {
+      adminPricingAlertsBox.textContent = "No pricing review alerts.";
+    } else {
+      adminPricingAlertsBox.textContent = alerts
+        .map((item) => {
+          const modelText = item?.model ? ` | model=${item.model}` : "";
+          return `[${item.provider}] ${item.operation}${modelText} | count=${item.events} | ${item.message}`;
+        })
+        .join("\n");
+    }
+  }
+
+  if (adminAccountsTableBody) {
+    adminAccountsTableBody.innerHTML = "";
+    const rows = (state.adminAccountsOverview || []).slice();
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="12" class="muted">No account data.</td>';
+      adminAccountsTableBody.appendChild(tr);
+    } else {
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(row.email || "")}</td>
+          <td>${escapeHtml(row.role || "")}</td>
+          <td>${escapeHtml(row.granted_usd || "0")}</td>
+          <td>${escapeHtml(row.recharged_usd || "0")}</td>
+          <td>${escapeHtml(row.used_usd || "0")}</td>
+          <td>${escapeHtml(row.platform_cost_estimated_usd || "0")}</td>
+          <td>${escapeHtml(row.remaining_usd || "0")}</td>
+          <td>${escapeHtml(row.openai_cost_usd || "0")}</td>
+          <td>${escapeHtml(row.xai_cost_usd || "0")}</td>
+          <td>${escapeHtml(row.openai_platform_cost_estimated_usd || "0")}</td>
+          <td>${escapeHtml(row.xai_platform_cost_estimated_usd || "0")}</td>
+          <td>${escapeHtml(String(row.video_events || 0))}</td>
+        `;
+        adminAccountsTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  if (adminVideoUserFilter) {
+    const current = state.adminVideoFilterUserId || "";
+    adminVideoUserFilter.innerHTML = "";
+    const allOption = document.createElement("option");
+    allOption.value = "";
+    allOption.textContent = "All accounts";
+    adminVideoUserFilter.appendChild(allOption);
+    (state.adminUsers || []).forEach((user) => {
+      const option = document.createElement("option");
+      option.value = user.id;
+      option.textContent = user.email || user.username || user.id;
+      adminVideoUserFilter.appendChild(option);
+    });
+    adminVideoUserFilter.value = current;
+  }
+
+  if (adminVideosTableBody) {
+    adminVideosTableBody.innerHTML = "";
+    const filterUserId = String(state.adminVideoFilterUserId || "").trim();
+    const rows = (state.adminVideoEvents || []).filter((row) => !filterUserId || row.user_id === filterUserId);
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="7" class="muted">No video generation records.</td>';
+      adminVideosTableBody.appendChild(tr);
+    } else {
+      rows.forEach((row) => {
+        const createdAtText = row.created_at ? new Date(row.created_at).toLocaleString() : "-";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(createdAtText)}</td>
+          <td>${escapeHtml(row.user_email || row.user_id || "")}</td>
+          <td>${escapeHtml(row.model || "")}</td>
+          <td>${escapeHtml(row.resolution || "-")}</td>
+          <td>${escapeHtml(`${row.duration_seconds || "-"}s`)}</td>
+          <td>${escapeHtml(row.cost_usd || "0")}</td>
+          <td><button class="secondary-btn details-btn" type="button" data-video-detail-id="${escapeHtml(row.usage_event_id || "")}">View</button></td>
+        `;
+        adminVideosTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  if (adminVideoDetailBox) {
+    const detail = state.adminSelectedVideoDetail;
+    if (!detail) {
+      adminVideoDetailBox.innerHTML = '<p class="muted">Click one row in the list to view image/video detail.</p>';
+    } else {
+      const promptText = normalizePromptText(detail.final_prompt || "");
+      const hasImage = Boolean(detail.input_image_data_uri);
+      const hasVideo = Boolean(detail.video_url);
+      adminVideoDetailBox.innerHTML = `
+        <div class="admin-video-detail-grid">
+          <div>
+            ${hasImage ? `<img src="${escapeHtml(detail.input_image_data_uri)}" alt="video input frame" />` : '<p class="muted">Original uploaded input image was not stored for this event.</p>'}
+          </div>
+          <div>
+            <p class="muted">Account: ${escapeHtml(detail.user_email || detail.user_id || "-")}</p>
+            <p class="muted">Model: ${escapeHtml(detail.model || "-")} | Resolution: ${escapeHtml(detail.resolution || "-")} | Duration: ${escapeHtml(String(detail.duration_seconds || "-"))}s | Cost: ${escapeHtml(detail.cost_usd || "0")} USD</p>
+            ${detail.linked_input_image_usage_event_id ? `<p class="muted">Input image event: ${escapeHtml(detail.linked_input_image_usage_event_id)}</p>` : ""}
+            ${hasVideo ? `<a href="${escapeHtml(detail.video_url)}" target="_blank" rel="noopener noreferrer">Open video URL</a><video controls src="${escapeHtml(detail.video_url)}"></video>` : '<p class="muted">No video URL saved in this event.</p>'}
+            <p class="muted">Prompt</p>
+            <pre class="prompt-preview">${escapeHtml(promptText || "(empty)")}</pre>
+          </div>
+        </div>
+      `;
+    }
+  }
+}
+
+async function refreshAdminData() {
+  if (state.authUser?.role !== "ADMIN") return;
+  const [usersRes, overviewRes, pricingRes, videosRes] = await Promise.all([
+    fetch("/api/admin/users"),
+    fetch("/api/admin/accounts-overview"),
+    fetch("/api/admin/pricing"),
+    fetch("/api/admin/videos?limit=300")
+  ]);
+  const [usersData, overviewData, pricingData, videosData] = await Promise.all([
+    usersRes.json(),
+    overviewRes.json(),
+    pricingRes.json(),
+    videosRes.json()
+  ]);
+  if (!usersRes.ok) throw new Error(usersData.error || "Failed to load admin users.");
+  if (!overviewRes.ok) throw new Error(overviewData.error || "Failed to load admin accounts overview.");
+  if (!pricingRes.ok) throw new Error(pricingData.error || "Failed to load admin pricing.");
+  if (!videosRes.ok) throw new Error(videosData.error || "Failed to load admin videos.");
+
+  state.adminUsers = Array.isArray(usersData.users) ? usersData.users : [];
+  state.adminAccountsOverview = Array.isArray(overviewData.accounts) ? overviewData.accounts : [];
+  state.adminAccountsTotals = overviewData.totals || null;
+  state.adminDefaultPricing = Array.isArray(pricingData.default_pricing) ? pricingData.default_pricing : [];
+  state.adminPricingAlerts = Array.isArray(pricingData.pricing_review_alerts) ? pricingData.pricing_review_alerts : [];
+  state.adminVideoEvents = Array.isArray(videosData.videos) ? videosData.videos : [];
+  if (state.adminVideoFilterUserId) {
+    const exists = state.adminUsers.some((user) => user.id === state.adminVideoFilterUserId);
+    if (!exists) state.adminVideoFilterUserId = "";
+  }
+  if (state.adminSelectedVideoDetail?.usage_event_id) {
+    const stillExists = state.adminVideoEvents.some((row) => row.usage_event_id === state.adminSelectedVideoDetail.usage_event_id);
+    if (!stillExists) state.adminSelectedVideoDetail = null;
+  }
+  renderAdminPanel();
+}
+
+async function fetchAdminVideoDetail(usageEventId) {
+  const id = String(usageEventId || "").trim();
+  if (!id) return;
+  const res = await fetch(`/api/admin/videos/${encodeURIComponent(id)}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to load video detail.");
+  state.adminSelectedVideoDetail = data.video_detail || null;
+  renderAdminPanel();
 }
 
 function applyAdvancedPanelsVisibility() {
@@ -83,6 +499,17 @@ function getVideoCount() {
   const value = Number.parseInt(String(videoCountInput.value || ""), 10);
   if (!Number.isInteger(value)) return 3;
   return Math.max(1, Math.min(8, value));
+}
+
+function normalizeTargetMarketValue(value) {
+  const text = String(value || "").trim();
+  return text || "Malaysia";
+}
+
+function getTargetMarket() {
+  const market = normalizeTargetMarketValue(targetMarketInput?.value || state.targetMarket);
+  state.targetMarket = market;
+  return market;
 }
 
 function normalizePromptText(input) {
@@ -142,6 +569,15 @@ function safeJsonStringify(value, maxStringLen = 4200) {
     },
     2
   );
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function renderModelDebug() {
@@ -226,13 +662,10 @@ function logDirectionDebug(directionDebug, errorMessage) {
 
 function switchStep(targetStep) {
   state.step = targetStep;
-  step1Panel.classList.toggle("hidden", targetStep !== 1);
-  step2Panel.classList.toggle("hidden", targetStep !== 2);
-  step3Panel.classList.toggle("hidden", targetStep !== 3);
-
-  tabStep1.classList.toggle("active", targetStep === 1);
-  tabStep2.classList.toggle("active", targetStep === 2);
-  tabStep3.classList.toggle("active", targetStep === 3);
+  if (step2Panel) step2Panel.classList.toggle("hidden", targetStep !== 2);
+  if (step3Panel) step3Panel.classList.toggle("hidden", targetStep !== 3);
+  if (tabStep2) tabStep2.classList.toggle("active", targetStep === 2);
+  if (tabStep3) tabStep3.classList.toggle("active", targetStep === 3);
 }
 
 function getHistory() {
@@ -248,12 +681,12 @@ function saveHistory(items) {
 }
 
 function setHistoryExpanded(expanded) {
-  state.historyExpanded = Boolean(expanded);
-  if (historyPanel) historyPanel.classList.toggle("hidden", !state.historyExpanded);
-  if (toggleHistoryBtn) {
-    const count = getHistory().length;
-    toggleHistoryBtn.textContent = state.historyExpanded ? `Hide (${count})` : `History (${count})`;
-  }
+  state.historyModalOpen = Boolean(expanded);
+  if (historyModal) historyModal.classList.toggle("hidden", !state.historyModalOpen);
+}
+
+function closeHistoryModal() {
+  setHistoryExpanded(false);
 }
 
 async function downloadVideoFile(videoUrl) {
@@ -274,9 +707,8 @@ async function downloadVideoFile(videoUrl) {
 
 function renderHistory() {
   const history = getHistory();
-  if (toggleHistoryBtn) {
-    toggleHistoryBtn.textContent = state.historyExpanded ? `Hide (${history.length})` : `History (${history.length})`;
-  }
+  if (openHistoryModalBtn) openHistoryModalBtn.textContent = `Generated Videos (${history.length})`;
+  if (!historyList) return;
   historyList.innerHTML = "";
   if (!history.length) {
     historyList.innerHTML = '<p class="muted">No generated videos yet.</p>';
@@ -418,6 +850,7 @@ function renderFirstFrames() {
         renderFirstFrames();
         await generateFirstFrameAtIndex(i, { force: true });
         state.firstFrameStatuses[i] = "done";
+        await refreshAuthState().catch(() => {});
         setStatus(`Generated first frame #${i + 1}.`);
       } catch (error) {
         state.firstFrameStatuses[i] = "error";
@@ -458,7 +891,8 @@ function renderFirstFrames() {
       videoStep.textContent = "Video generated.";
       videoStep.classList.remove("hidden");
     } else if (videoStatus === "error") {
-      videoStep.textContent = "Video generation failed.";
+      const detail = normalizePromptText(state.videoErrors?.[i] || "");
+      videoStep.textContent = detail ? `Video generation failed: ${detail}` : "Video generation failed.";
       videoStep.classList.remove("hidden");
     } else {
       videoStep.classList.add("hidden");
@@ -509,8 +943,10 @@ function renderFirstFrames() {
     const videoTitle = document.createElement("p");
     videoTitle.className = "muted";
     videoTitle.textContent = "Generated Video";
+    videoTitle.classList.toggle("hidden", !latestVideo?.video_url);
 
     const videoWrap = document.createElement("div");
+    videoWrap.classList.toggle("hidden", !latestVideo?.video_url);
     if (latestVideo?.video_url) {
       const videoEl = document.createElement("video");
       videoEl.controls = true;
@@ -540,11 +976,6 @@ function renderFirstFrames() {
 
       videoActions.append(openLink, downloadLink);
       videoWrap.append(videoEl, videoActions);
-    } else {
-      const noVideo = document.createElement("p");
-      noVideo.className = "muted";
-      noVideo.textContent = "No video generated yet.";
-      videoWrap.appendChild(noVideo);
     }
 
     frameZone.append(img, placeholder);
@@ -581,11 +1012,13 @@ function renderPromptPlan() {
 }
 
 function renderSnapshot() {
+  if (!summaryText) return;
   const imageName = state.imageFile?.name || "No image selected";
   const frameReadyCount = (state.firstFrames || []).filter((f) => typeof f?.dataUri === "string" && f.dataUri)
     .length;
   summaryText.textContent = [
     `Reference: ${imageName}`,
+    `Market: ${getTargetMarket()}`,
     `First Frames: ${frameReadyCount}/${state.preparedPrompts.length || 0}`,
     `Video Count: ${getVideoCount()}`,
     `Duration: ${durationSelect.value}s`,
@@ -595,6 +1028,7 @@ function renderSnapshot() {
 }
 
 function updateReferencePreview(file) {
+  if (!referencePreview) return;
   if (!file) {
     referencePreview.src = "";
     referencePreview.classList.add("hidden");
@@ -730,6 +1164,59 @@ function closeImageZoom() {
   imageZoomModal.classList.add("hidden");
 }
 
+function openAuthModal({ resumeGenerate = false } = {}) {
+  state.resumeGenerateAfterAuth = Boolean(resumeGenerate);
+  clearStatus();
+  if (authModal) authModal.classList.remove("hidden");
+}
+
+function closeAuthModal({ clearResume = true } = {}) {
+  if (clearResume) state.resumeGenerateAfterAuth = false;
+  if (authModal) authModal.classList.add("hidden");
+}
+
+function openAdminModal() {
+  if (!hasAuth() || state.authUser?.role !== "ADMIN") return;
+  if (adminConsoleModal) adminConsoleModal.classList.remove("hidden");
+}
+
+function closeAdminModal() {
+  if (adminConsoleModal) adminConsoleModal.classList.add("hidden");
+}
+
+function showAnalysisOverlay(file) {
+  if (!analysisOverlay) return;
+  if (state.analysisOverlayImageUrl) {
+    URL.revokeObjectURL(state.analysisOverlayImageUrl);
+    state.analysisOverlayImageUrl = "";
+  }
+  if (analysisOverlayImage) {
+    if (file) {
+      const objectUrl = URL.createObjectURL(file);
+      state.analysisOverlayImageUrl = objectUrl;
+      analysisOverlayImage.src = objectUrl;
+      analysisOverlayImage.classList.remove("hidden");
+    } else {
+      analysisOverlayImage.src = "";
+      analysisOverlayImage.classList.add("hidden");
+    }
+  }
+  analysisOverlay.classList.remove("hidden");
+}
+
+function hideAnalysisOverlay() {
+  if (!analysisOverlay) return;
+  analysisOverlay.classList.add("hidden");
+  if (analysisOverlayImage) {
+    analysisOverlayImage.src = "";
+    analysisOverlayImage.classList.add("hidden");
+  }
+  if (state.analysisOverlayImageUrl) {
+    URL.revokeObjectURL(state.analysisOverlayImageUrl);
+    state.analysisOverlayImageUrl = "";
+  }
+}
+
 async function createVideoWithFormData(formData, index) {
   const res = await fetch("/api/generate-video", {
     method: "POST",
@@ -755,6 +1242,10 @@ async function createVideoWithFormData(formData, index) {
     response: {
       status: data.status || null,
       video_url: data.video_url,
+      estimated_debit_usd: data.estimated_debit_usd || null,
+      estimated_cost_usd: data.estimated_cost_usd || null,
+      estimated_debit_breakdown: data.estimated_debit_breakdown || null,
+      billing_pricing_source: data.billing_pricing_source || null,
       duration: data.duration,
       resolution: data.resolution,
       aspect_ratio: data.aspect_ratio,
@@ -768,8 +1259,8 @@ async function createVideoWithFormData(formData, index) {
 
 function buildVideoFormData(promptText, promptIndex) {
   const formData = new FormData();
-  formData.append("api_key", state.xaiApiKey);
   formData.append("prompt", promptText);
+  formData.append("target_market", getTargetMarket());
   formData.append("duration", durationSelect.value);
   formData.append("resolution", resolutionSelect.value);
   formData.append("aspect_ratio", aspectRatioSelect.value);
@@ -803,7 +1294,6 @@ async function requestFirstFrameAtIndex(index, { force = false } = {}) {
   if (!force && existing?.dataUri) return existing;
 
   const reqData = new FormData();
-  reqData.append("openai_api_key", state.openaiApiKey);
   reqData.append("aspect_ratio", aspectRatioSelect.value);
   reqData.append("scene_direction", sceneDirection);
   reqData.append("scene_keywords", JSON.stringify(scenePlan.scene_keywords || []));
@@ -950,8 +1440,8 @@ async function requestRegeneratedSceneAtIndex(index) {
     .filter(Boolean);
 
   const reqData = new FormData();
-  reqData.append("openai_api_key", state.openaiApiKey);
   reqData.append("image", state.imageFile, state.imageFile.name);
+  reqData.append("target_market", getTargetMarket());
   reqData.append("duration", durationSelect.value);
   reqData.append("index", String(index));
   reqData.append("total", String(total));
@@ -990,6 +1480,8 @@ async function requestRegeneratedSceneAtIndex(index) {
   state.preparedPrompts[index] = "";
   state.firstFrames[index] = { dataUri: null, mime: null, prompt: null, debug: null };
   state.videoStatuses[index] = "idle";
+  if (!Array.isArray(state.videoErrors)) state.videoErrors = [];
+  state.videoErrors[index] = "";
   if (!Array.isArray(state.sceneVideos)) state.sceneVideos = [];
   state.sceneVideos[index] = null;
   renderPromptPlan();
@@ -1011,8 +1503,8 @@ async function requestVideoPromptAtIndex(index) {
   }
 
   const reqData = new FormData();
-  reqData.append("openai_api_key", state.openaiApiKey);
   reqData.append("duration", durationSelect.value);
+  reqData.append("target_market", getTargetMarket());
   reqData.append("scene", JSON.stringify({
     direction: scene.direction,
     scene_keywords: scene.scene_keywords || [],
@@ -1066,6 +1558,7 @@ async function regenerateFirstFrame(index) {
     state.firstFrameStatuses[index] = "error";
     throw error;
   } finally {
+    await refreshAuthState().catch(() => {});
     renderFirstFrames();
     renderSnapshot();
   }
@@ -1076,6 +1569,7 @@ async function generateVideoForIndex(index) {
     throw new Error("No generated scenes found. Please run Generate Prompts first.");
   }
   if (!Array.isArray(state.videoStatuses)) state.videoStatuses = [];
+  if (!Array.isArray(state.videoErrors)) state.videoErrors = [];
   if (state.videoStatuses[index] === "prompting" || state.videoStatuses[index] === "generating") {
     throw new Error(`Video #${index + 1} is already generating.`);
   }
@@ -1097,6 +1591,7 @@ async function generateVideoForIndex(index) {
   }
 
   state.videoStatuses[index] = "prompting";
+  state.videoErrors[index] = "";
   renderFirstFrames();
   setStatus(`Video Step 1/2: Generating prompt for scene #${index + 1} from scene direction + frame...`);
 
@@ -1105,6 +1600,7 @@ async function generateVideoForIndex(index) {
     promptText = await requestVideoPromptAtIndex(index);
   } catch (error) {
     state.videoStatuses[index] = "error";
+    state.videoErrors[index] = normalizePromptText(error?.message || "Failed to generate scene video prompt.");
     renderFirstFrames();
     throw error;
   }
@@ -1139,12 +1635,14 @@ async function generateVideoForIndex(index) {
       created_at: new Date().toISOString()
     };
     state.videoStatuses[index] = "done";
-    setHistoryExpanded(true);
+    state.videoErrors[index] = "";
     setStatus(`Video #${index + 1} generated.`);
   } catch (error) {
     state.videoStatuses[index] = "error";
+    state.videoErrors[index] = normalizePromptText(error?.message || "Failed to generate video.");
     throw error;
   } finally {
+    await refreshAuthState().catch(() => {});
     renderFirstFrames();
   }
 }
@@ -1158,14 +1656,15 @@ async function generatePromptsSequential() {
   state.firstFrameStatuses = [];
   state.firstFrameTasks = [];
   state.videoStatuses = [];
+  state.videoErrors = [];
   state.sceneVideos = [];
   renderPromptPlan();
   renderFirstFrames();
 
   setStatus("Generating different scene directions and final prompts...");
   const reqData = new FormData();
-  reqData.append("openai_api_key", state.openaiApiKey);
   reqData.append("image", state.imageFile, state.imageFile.name);
+  reqData.append("target_market", getTargetMarket());
   reqData.append("count", String(count));
   reqData.append("duration", durationSelect.value);
 
@@ -1225,46 +1724,68 @@ async function generatePromptsSequential() {
   state.firstFrameStatuses = plans.map(() => "idle");
   state.firstFrameTasks = plans.map(() => null);
   state.videoStatuses = plans.map(() => "idle");
+  state.videoErrors = plans.map(() => "");
   state.sceneVideos = plans.map(() => null);
   renderPromptPlan();
 }
 
-tabStep1.addEventListener("click", () => switchStep(1));
-tabStep2.addEventListener("click", () => {
-  if (!state.openaiApiKey || !state.xaiApiKey) {
-    setStatus("Complete Step 1 first.", "error");
+async function runGeneratePromptsFlow() {
+  if (!hasAuth()) {
+    openAuthModal({ resumeGenerate: true });
     return;
   }
-  switchStep(2);
-});
-tabStep3.addEventListener("click", () => {
-  if (!state.openaiApiKey || !state.xaiApiKey) {
-    setStatus("Complete Step 1 first.", "error");
-    return;
+  if (!state.imageFile) throw new Error("Please upload a reference image first.");
+  showAnalysisOverlay(state.imageFile);
+  setBusy(true);
+  clearModelDebug();
+  try {
+    await generatePromptsSequential();
+    await generateFirstFrames(false);
+    await normalizeExistingFramesToAspectRatio();
+    await refreshAuthState().catch(() => {});
+    renderSnapshot();
+    switchStep(3);
+    setStatus(`Generated ${state.preparedPrompts.length} scene directions and first frames.`);
+  } finally {
+    hideAnalysisOverlay();
+    setBusy(false);
   }
-  renderSnapshot();
-  renderPromptPlan();
-  renderFirstFrames();
-  renderModelDebug();
-  renderHistory();
-  void normalizeExistingFramesToAspectRatio();
-  switchStep(3);
-});
+}
 
-toStep2Btn.addEventListener("click", () => {
-  const openaiKey = String(openaiApiKeyInput.value || "").trim();
-  const xaiKey = String(xaiApiKeyInput.value || "").trim();
-  if (!openaiKey || !xaiKey) {
-    setStatus("Both API keys are required.", "error");
-    return;
+async function maybeResumeGenerateAfterAuth() {
+  if (!state.resumeGenerateAfterAuth) return;
+  state.resumeGenerateAfterAuth = false;
+  try {
+    await runGeneratePromptsFlow();
+  } catch (error) {
+    setStatus(`Error: ${error.message}`, "error");
   }
-  state.openaiApiKey = openaiKey;
-  state.xaiApiKey = xaiKey;
-  clearStatus();
-  switchStep(2);
-});
+}
+
+if (tabStep2) {
+  tabStep2.addEventListener("click", () => {
+    switchStep(2);
+  });
+}
+
+if (tabStep3) {
+  tabStep3.addEventListener("click", () => {
+    if (!hasAuth()) {
+      openAuthModal();
+      return;
+    }
+    renderSnapshot();
+    renderPromptPlan();
+    renderFirstFrames();
+    renderModelDebug();
+    renderHistory();
+    void normalizeExistingFramesToAspectRatio();
+    switchStep(3);
+  });
+}
 
 imageInput.addEventListener("change", () => {
+  state.targetMarket = getTargetMarket();
   state.imageFile = imageInput.files?.[0] || null;
   state.preparedPrompts = [];
   state.scenePlans = [];
@@ -1272,6 +1793,7 @@ imageInput.addEventListener("change", () => {
   state.firstFrameStatuses = [];
   state.firstFrameTasks = [];
   state.videoStatuses = [];
+  state.videoErrors = [];
   state.sceneVideos = [];
   clearModelDebug();
   renderPromptPlan();
@@ -1280,14 +1802,16 @@ imageInput.addEventListener("change", () => {
   renderSnapshot();
 });
 
-[videoCountInput, durationSelect, resolutionSelect, aspectRatioSelect].forEach((el) => {
+[videoCountInput, targetMarketInput, durationSelect, resolutionSelect, aspectRatioSelect].filter(Boolean).forEach((el) => {
   el.addEventListener("change", () => {
+    state.targetMarket = getTargetMarket();
     state.preparedPrompts = [];
     state.scenePlans = [];
     state.firstFrames = [];
     state.firstFrameStatuses = [];
     state.firstFrameTasks = [];
     state.videoStatuses = [];
+    state.videoErrors = [];
     state.sceneVideos = [];
     renderPromptPlan();
     renderFirstFrames();
@@ -1304,24 +1828,198 @@ if (clearDebugBtn) {
 
 generatePromptsBtn.addEventListener("click", async () => {
   try {
-    setBusy(true);
-    clearModelDebug();
-    await generatePromptsSequential();
-    renderSnapshot();
-    switchStep(3);
-    await generateFirstFrames(false);
-    await normalizeExistingFramesToAspectRatio();
-    setStatus(`Generated ${state.preparedPrompts.length} scene directions and first frames.`);
+    await runGeneratePromptsFlow();
   } catch (error) {
     setStatus(`Error: ${error.message}`, "error");
-  } finally {
-    setBusy(false);
   }
 });
 
-if (toggleHistoryBtn) {
-  toggleHistoryBtn.addEventListener("click", () => {
-    setHistoryExpanded(!state.historyExpanded);
+if (authRegisterBtn) {
+  authRegisterBtn.addEventListener("click", async () => {
+    try {
+      const payload = {
+        email: String(authEmailInput?.value || "").trim(),
+        password: String(authPasswordInput?.value || "")
+      };
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Register failed.");
+      await refreshAuthState();
+      closeAuthModal({ clearResume: false });
+      const verifyText = data.verification_url
+        ? `Registered. Verify email using this dev link: ${data.verification_url}`
+        : "Registered. Please verify your email before generation.";
+      setStatus(verifyText);
+      await maybeResumeGenerateAfterAuth();
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (authLoginBtn) {
+  authLoginBtn.addEventListener("click", async () => {
+    try {
+      const payload = {
+        email: String(authEmailInput?.value || "").trim(),
+        password: String(authPasswordInput?.value || "")
+      };
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Login failed.");
+      await refreshAuthState(false);
+      closeAuthModal({ clearResume: false });
+      await maybeResumeGenerateAfterAuth();
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (authLogoutBtn) {
+  authLogoutBtn.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Logout failed.");
+      state.authUser = null;
+      state.authBalance = "0.0000";
+      state.accountUsageLoading = false;
+      state.accountSummary = null;
+      closeAccountUsageModal();
+      renderAuthUI();
+      closeAdminModal();
+      switchStep(2);
+      setStatus("Logged out.");
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (authRefreshBtn) {
+  authRefreshBtn.addEventListener("click", async () => {
+    try {
+      await refreshAuthState(false);
+      if (accountUsageModal && !accountUsageModal.classList.contains("hidden")) {
+        await refreshAccountUsageSummary();
+      }
+      setStatus("Account refreshed.");
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (openAccountUsageBtn) {
+  openAccountUsageBtn.addEventListener("click", async () => {
+    if (!hasAuth()) return;
+    openAccountUsageModal();
+    try {
+      await refreshAccountUsageSummary();
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (adminRefreshBtn) {
+  adminRefreshBtn.addEventListener("click", async () => {
+    try {
+      if (state.authUser?.role !== "ADMIN") throw new Error("Admin permission required.");
+      await refreshAdminData();
+      setStatus("Admin data refreshed.");
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (grantCreditsBtn) {
+  grantCreditsBtn.addEventListener("click", async () => {
+    try {
+      if (state.authUser?.role !== "ADMIN") throw new Error("Admin permission required.");
+      const userId = String(grantUserSelect?.value || "").trim();
+      const amount = Number.parseFloat(String(grantAmountInput?.value || ""));
+      const reason = String(grantReasonInput?.value || "admin usd grant").trim() || "admin usd grant";
+      if (!userId) throw new Error("Please select a target user.");
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Grant USD amount must be > 0.");
+
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/credits/grant`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          amount_usd: amount,
+          reason
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to grant USD.");
+
+      await refreshAdminData();
+      await refreshAuthState();
+      setStatus(`Granted ${data.amount_usd || data.amount_credits} USD.`);
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (adminVideoUserFilter) {
+  adminVideoUserFilter.addEventListener("change", () => {
+    state.adminVideoFilterUserId = String(adminVideoUserFilter.value || "").trim();
+    renderAdminPanel();
+  });
+}
+
+if (adminVideosTable) {
+  adminVideosTable.addEventListener("click", async (event) => {
+    const button = event.target?.closest?.("[data-video-detail-id]");
+    if (!button) return;
+    const usageEventId = String(button.getAttribute("data-video-detail-id") || "").trim();
+    if (!usageEventId) return;
+    try {
+      await fetchAdminVideoDetail(usageEventId);
+      setStatus(`Loaded video detail ${usageEventId}.`);
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    }
+  });
+}
+
+if (openHistoryModalBtn) {
+  openHistoryModalBtn.addEventListener("click", () => {
+    setHistoryExpanded(true);
+  });
+}
+
+if (closeHistoryModalBtn) {
+  closeHistoryModalBtn.addEventListener("click", () => closeHistoryModal());
+}
+
+if (historyModal) {
+  historyModal.addEventListener("click", (event) => {
+    if (event.target === historyModal) closeHistoryModal();
+  });
+}
+
+if (closeAccountUsageModalBtn) {
+  closeAccountUsageModalBtn.addEventListener("click", () => closeAccountUsageModal());
+}
+
+if (accountUsageModal) {
+  accountUsageModal.addEventListener("click", (event) => {
+    if (event.target === accountUsageModal) closeAccountUsageModal();
   });
 }
 
@@ -1335,9 +2033,41 @@ if (imageZoomModal) {
   });
 }
 
+if (openAuthModalBtn) {
+  openAuthModalBtn.addEventListener("click", () => openAuthModal());
+}
+
+if (closeAuthModalBtn) {
+  closeAuthModalBtn.addEventListener("click", () => closeAuthModal());
+}
+
+if (authModal) {
+  authModal.addEventListener("click", (event) => {
+    if (event.target === authModal) closeAuthModal();
+  });
+}
+
+if (openAdminModalBtn) {
+  openAdminModalBtn.addEventListener("click", () => openAdminModal());
+}
+
+if (closeAdminModalBtn) {
+  closeAdminModalBtn.addEventListener("click", () => closeAdminModal());
+}
+
+if (adminConsoleModal) {
+  adminConsoleModal.addEventListener("click", (event) => {
+    if (event.target === adminConsoleModal) closeAdminModal();
+  });
+}
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeImageZoom();
+    closeAuthModal();
+    closeAdminModal();
+    closeHistoryModal();
+    closeAccountUsageModal();
     return;
   }
   if (event.metaKey && String(event.key || "").toLowerCase() === "j") {
@@ -1353,7 +2083,9 @@ renderPromptPlan();
 renderFirstFrames();
 renderHistory();
 renderModelDebug();
+state.targetMarket = getTargetMarket();
 renderSnapshot();
 applyAdvancedPanelsVisibility();
 setHistoryExpanded(false);
-switchStep(1);
+void refreshAuthState().catch(() => {});
+switchStep(2);

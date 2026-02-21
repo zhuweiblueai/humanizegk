@@ -22,29 +22,33 @@
         <p>
           Step-by-step workflow for prompt generation and video production.
         </p>
+        <div class="header-actions">
+          <button id="openAuthModalBtn" class="secondary-btn" type="button">Login</button>
+          <button id="openHistoryModalBtn" class="secondary-btn" type="button">Generated Videos (0)</button>
+          <div id="accountMenu" class="account-menu hidden">
+            <button id="accountMenuBtn" class="secondary-btn" type="button">Account</button>
+            <div id="accountPopover" class="account-popover">
+              <p class="muted">Signed In User</p>
+              <p id="authUserInfo"></p>
+              <p class="muted">USD Balance</p>
+              <p id="authBalanceInfo"></p>
+              <button id="openAccountUsageBtn" class="secondary-btn" type="button">View Spending Details</button>
+              <div class="history-actions">
+                <button id="authRefreshBtn" class="secondary-btn" type="button">Refresh Account</button>
+                <button id="authLogoutBtn" class="secondary-btn" type="button">Logout</button>
+              </div>
+            </div>
+          </div>
+          <button id="openAdminModalBtn" class="secondary-btn hidden" type="button">Admin Console</button>
+        </div>
       </header>
 
       <section class="step-tabs">
-        <button id="tabStep1" class="tab-btn active" type="button">Step 1: API Keys</button>
-        <button id="tabStep2" class="tab-btn" type="button">Step 2: Inputs</button>
-        <button id="tabStep3" class="tab-btn" type="button">Step 3: Prompts & Videos</button>
+        <button id="tabStep2" class="tab-btn active" type="button">Step 1: Inputs</button>
+        <button id="tabStep3" class="tab-btn" type="button">Step 2: Prompts & Videos</button>
       </section>
 
       <section id="statusBox" class="status hidden"></section>
-
-      <section class="panel" id="step1Panel">
-        <form id="step1Form" class="form-grid">
-          <label>
-            OpenAI API Key (for prompt generation)
-            <input id="openaiApiKeyInput" type="password" placeholder="sk-..." autocomplete="off" required />
-          </label>
-          <label>
-            XAI API Key (for video generation)
-            <input id="xaiApiKeyInput" type="password" placeholder="xai-..." autocomplete="off" required />
-          </label>
-          <button id="toStep2Btn" type="button">Continue to Step 2</button>
-        </form>
-      </section>
 
       <section class="panel hidden" id="step2Panel">
         <form id="step2Form" class="form-grid">
@@ -55,6 +59,10 @@
           <label>
             Video Count
             <input id="videoCountInput" type="number" min="1" max="8" value="3" required />
+          </label>
+          <label>
+            Target Market
+            <input id="targetMarketInput" type="text" value="Malaysia" placeholder="Malaysia" required />
           </label>
           <div class="triple-grid">
             <label>
@@ -94,34 +102,10 @@
       </section>
 
       <section class="panel hidden" id="step3Panel">
-        <section class="result config-summary" id="configSummarySection">
-          <h2>Current Input Snapshot</h2>
-          <div class="summary-grid">
-            <div>
-              <p class="muted">Reference Image</p>
-              <img id="referencePreview" class="reference-preview hidden" alt="reference preview" />
-            </div>
-            <div>
-              <p class="muted">Settings</p>
-              <p id="summaryText"></p>
-            </div>
-          </div>
-        </section>
-
         <section class="result" id="firstFrameSection">
           <h2>Scenes (Frame + Prompt + Video)</h2>
           <p class="muted">Each scene includes Scene Direction, Scene Keywords, Frame image, Regenerate, Generate Video, Video Prompt, and latest generated video. Press <kbd>⌘</kbd> + <kbd>J</kbd> to show/hide Image Prompt, Video Prompt, and Model Debug.</p>
           <div id="firstFrameList" class="first-frame-list"></div>
-        </section>
-
-        <section class="result" id="historySection">
-          <div class="section-head">
-            <h2>Generated Videos</h2>
-            <button id="toggleHistoryBtn" class="secondary-btn history-toggle-btn" type="button">History</button>
-          </div>
-          <div id="historyPanel" class="hidden">
-            <div id="historyList" class="history-list"></div>
-          </div>
         </section>
 
         <section class="result hidden" id="modelDebugSection">
@@ -137,6 +121,183 @@
     <div id="imageZoomModal" class="image-zoom-modal hidden" role="dialog" aria-modal="true" aria-label="Image Preview">
       <button id="closeImageZoomBtn" class="image-zoom-close" type="button" aria-label="Close image preview">×</button>
       <img id="zoomedImage" class="image-zoom-view" alt="zoomed first frame preview" />
+    </div>
+
+    <div id="analysisOverlay" class="analysis-overlay hidden" role="status" aria-live="polite">
+      <div class="analysis-overlay-card">
+        <div class="analysis-overlay-head">
+          <div class="analysis-spinner" aria-hidden="true"></div>
+          <div>
+            <h2>Building a High-Converting Video Plan...</h2>
+            <p>Our AI is analyzing your product image to generate scenes and scripts designed to improve clicks and sales.</p>
+          </div>
+        </div>
+        <div class="analysis-overlay-content">
+          <img id="analysisOverlayImage" class="analysis-overlay-image hidden" alt="uploaded product preview" />
+          <ul class="analysis-overlay-list">
+            <li>🛍️ Detecting product highlights shoppers care about</li>
+            <li>👥 Selecting the highest-conversion audience age group</li>
+            <li>📍 Matching the best-buying scenarios and locations</li>
+            <li>📖 Designing short story hooks that drive action</li>
+            <li>🎬 Preparing conversion-focused first frames and video prompts</li>
+          </ul>
+        </div>
+        <p class="analysis-overlay-foot">Optimizing for TikTok-style engagement and purchase intent. Usually takes 15–30 seconds.</p>
+      </div>
+    </div>
+
+    <div id="authModal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-label="Login Required">
+      <div class="auth-modal-card">
+        <button id="closeAuthModalBtn" class="auth-modal-close" type="button" aria-label="Close login dialog">×</button>
+        <h2>Login Required</h2>
+        <p class="muted">Please login to continue generating prompts and videos.</p>
+        <div id="authGuestSection">
+          <div class="form-grid">
+            <label>
+              Email
+              <input id="authEmailInput" type="email" placeholder="you@example.com" autocomplete="email" />
+            </label>
+            <label>
+              Password
+              <input id="authPasswordInput" type="password" placeholder="At least 8 chars" autocomplete="current-password" />
+            </label>
+          </div>
+          <div class="history-actions">
+            <button id="authRegisterBtn" class="secondary-btn" type="button">Register</button>
+            <button id="authLoginBtn" type="button">Login</button>
+            <a id="googleLoginBtn" class="secondary-btn inline-link-btn" href="/api/auth/google">Login with Google</a>
+          </div>
+          <p class="muted">After register, verify email first. In dev, verification link is returned by API.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="adminConsoleModal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-label="Admin Console">
+      <div class="auth-modal-card admin-console-card">
+        <button id="closeAdminModalBtn" class="auth-modal-close" type="button" aria-label="Close admin dialog">×</button>
+        <div id="adminPanel" class="admin-panel hidden">
+          <div class="section-head">
+            <h2>Admin Console</h2>
+            <button id="adminRefreshBtn" class="secondary-btn" type="button">Refresh Admin Data</button>
+          </div>
+          <div class="triple-grid admin-module">
+            <label>
+              Grant User
+              <select id="grantUserSelect"></select>
+            </label>
+            <label>
+              Grant USD
+              <input id="grantAmountInput" type="number" min="0.0001" step="0.0001" placeholder="100" />
+            </label>
+          </div>
+          <label>
+            Grant Reason
+            <input id="grantReasonInput" type="text" placeholder="manual usd grant" autocomplete="off" />
+          </label>
+          <div class="history-actions">
+            <button id="grantCreditsBtn" type="button">Grant USD</button>
+          </div>
+          <div id="adminSummaryText" class="muted"></div>
+
+          <section class="admin-module">
+            <h3>Module 1: Default Unit Pricing</h3>
+            <p class="muted">Fixed default prices used when no manual pricing snapshot overrides exist.</p>
+            <div class="table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>Operation</th>
+                    <th>Model</th>
+                    <th>Unit</th>
+                    <th>Cost Price (USD)</th>
+                    <th>Default Price (USD)</th>
+                    <th>Markup (x)</th>
+                    <th>Gross Margin (USD)</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody id="adminPricingTableBody"></tbody>
+              </table>
+            </div>
+            <p class="muted">Pricing review alerts (new/unknown model-interface calls):</p>
+            <div id="adminPricingAlertsBox" class="prompt-preview"></div>
+          </section>
+
+          <section class="admin-module">
+            <h3>Module 2: Account Finance Overview</h3>
+            <p class="muted">Per account finance + platform estimated cost (OpenAI/xAI).</p>
+            <div class="table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Granted USD</th>
+                    <th>Recharged USD</th>
+                    <th>Used USD</th>
+                    <th>Platform Cost Est. USD</th>
+                    <th>Remaining USD</th>
+                    <th>OpenAI Billed USD</th>
+                    <th>xAI Billed USD</th>
+                    <th>OpenAI Cost Est. USD</th>
+                    <th>xAI Cost Est. USD</th>
+                    <th>Videos</th>
+                  </tr>
+                </thead>
+                <tbody id="adminAccountsTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="admin-module">
+            <div class="section-head">
+              <h3>Module 3: Video Generation Details</h3>
+              <label class="admin-filter">
+                Account
+                <select id="adminVideoUserFilter"></select>
+              </label>
+            </div>
+            <div class="table-wrap">
+              <table class="admin-table" id="adminVideosTable">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Account</th>
+                    <th>Model</th>
+                    <th>Resolution</th>
+                    <th>Duration</th>
+                    <th>Cost USD</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody id="adminVideosTableBody"></tbody>
+              </table>
+            </div>
+            <div id="adminVideoDetailBox" class="admin-video-detail">
+              <p class="muted">Click one row in the list to view image/video detail.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="historyModal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-label="Generated Videos">
+      <div class="auth-modal-card history-modal-card">
+        <button id="closeHistoryModalBtn" class="auth-modal-close" type="button" aria-label="Close generated videos dialog">×</button>
+        <div class="section-head">
+          <h2>Generated Videos</h2>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </div>
+    </div>
+
+    <div id="accountUsageModal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-label="Account Spending Details">
+      <div class="auth-modal-card account-usage-modal-card">
+        <button id="closeAccountUsageModalBtn" class="auth-modal-close" type="button" aria-label="Close account spending details dialog">×</button>
+        <h2>Account Spending Details</h2>
+        <pre id="accountUsageSummaryModalBox" class="prompt-preview"></pre>
+      </div>
     </div>
 
     <script src="/main.js"></script>
