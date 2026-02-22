@@ -115,6 +115,10 @@ function clearStatus() {
   statusBox.classList.remove("error");
 }
 
+function closeAccountMenu() {
+  if (accountMenu) accountMenu.classList.remove("open");
+}
+
 async function readApiResponse(response) {
   const text = await response.text();
   if (!text) return {};
@@ -251,6 +255,7 @@ function renderAuthUI() {
     closeAdminModal();
   }
   if (!authed) {
+    closeAccountMenu();
     state.accountUsageLoading = false;
     state.accountSummary = null;
     closeAccountUsageModal();
@@ -1181,6 +1186,7 @@ function closeImageZoom() {
 
 function openAuthModal({ resumeGenerate = false } = {}) {
   state.resumeGenerateAfterAuth = Boolean(resumeGenerate);
+  closeAccountMenu();
   clearStatus();
   if (authModal) authModal.classList.remove("hidden");
 }
@@ -1192,6 +1198,7 @@ function closeAuthModal({ clearResume = true } = {}) {
 
 function openAdminModal() {
   if (!hasAuth() || state.authUser?.role !== "ADMIN") return;
+  closeAccountMenu();
   if (adminConsoleModal) adminConsoleModal.classList.remove("hidden");
 }
 
@@ -1937,6 +1944,7 @@ if (authRefreshBtn) {
 if (openAccountUsageBtn) {
   openAccountUsageBtn.addEventListener("click", async () => {
     if (!hasAuth()) return;
+    closeAccountMenu();
     openAccountUsageModal();
     try {
       await refreshAccountUsageSummary();
@@ -2014,6 +2022,7 @@ if (adminVideosTable) {
 
 if (openHistoryModalBtn) {
   openHistoryModalBtn.addEventListener("click", () => {
+    closeAccountMenu();
     setHistoryExpanded(true);
   });
 }
@@ -2049,7 +2058,10 @@ if (imageZoomModal) {
 }
 
 if (openAuthModalBtn) {
-  openAuthModalBtn.addEventListener("click", () => openAuthModal());
+  openAuthModalBtn.addEventListener("click", () => {
+    closeAccountMenu();
+    openAuthModal();
+  });
 }
 
 if (closeAuthModalBtn) {
@@ -2066,6 +2078,22 @@ if (openAdminModalBtn) {
   openAdminModalBtn.addEventListener("click", () => openAdminModal());
 }
 
+if (accountMenuBtn) {
+  accountMenuBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!hasAuth() || !accountMenu) return;
+    accountMenu.classList.toggle("open");
+  });
+}
+
+document.addEventListener("click", (event) => {
+  if (!accountMenu) return;
+  const target = event.target;
+  if (target instanceof Node && accountMenu.contains(target)) return;
+  closeAccountMenu();
+});
+
 if (closeAdminModalBtn) {
   closeAdminModalBtn.addEventListener("click", () => closeAdminModal());
 }
@@ -2078,6 +2106,7 @@ if (adminConsoleModal) {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    closeAccountMenu();
     closeImageZoom();
     closeAuthModal();
     closeAdminModal();

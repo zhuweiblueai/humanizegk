@@ -110,10 +110,11 @@ body {
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
   display: none;
   z-index: 1350;
+  max-height: 72vh;
+  overflow: auto;
 }
 
-.account-menu:hover .account-popover,
-.account-menu:focus-within .account-popover {
+.account-menu.open .account-popover {
   display: block;
 }
 
@@ -825,6 +826,14 @@ video {
 }
 
 @media (max-width: 840px) {
+  .app-shell {
+    padding: 20px 12px 56px;
+  }
+
+  .hero {
+    padding: 18px;
+  }
+
   .step-tabs {
     grid-template-columns: 1fr;
   }
@@ -839,9 +848,35 @@ video {
 
   .header-actions {
     position: static;
-    margin-top: 14px;
-    justify-content: flex-end;
-    flex-wrap: wrap;
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .header-actions > button,
+  .header-actions > .account-menu {
+    width: 100%;
+  }
+
+  #openHistoryModalBtn {
+    grid-column: 1 / -1;
+  }
+
+  .account-menu .secondary-btn {
+    width: 100%;
+  }
+
+  .account-popover {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 72px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: 62vh;
+    z-index: 1500;
   }
 
   .prompt-plan-list {
@@ -865,6 +900,12 @@ video {
   }
 
   .admin-video-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .header-actions {
     grid-template-columns: 1fr;
   }
 }
