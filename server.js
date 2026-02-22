@@ -24,10 +24,6 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = String(process.env.NODE_ENV || "development").trim().toLowerCase();
 const IS_PRODUCTION = NODE_ENV === "production";
-const SKIP_EMAIL_VERIFICATION =
-  String(process.env.SKIP_EMAIL_VERIFICATION || (IS_PRODUCTION ? "false" : "true"))
-    .trim()
-    .toLowerCase() === "true";
 const APP_BASE_URL = String(process.env.APP_BASE_URL || `http://localhost:${PORT}`).trim();
 const SESSION_SECRET = String(process.env.SESSION_SECRET || "").trim();
 const OPENAI_PLATFORM_API_KEY = String(process.env.OPENAI_API_KEY || "").trim();
@@ -39,8 +35,6 @@ const ADMIN_EMAILS = new Set(
     .filter(Boolean)
 );
 const BALANCE_USD_PER_USD = 1;
-const EMAIL_VERIFY_TOKEN_TTL_HOURS =
-  Number.parseInt(String(process.env.EMAIL_VERIFY_TOKEN_TTL_HOURS || "24"), 10) || 24;
 const AUTH_RATE_LIMIT_WINDOW_MS =
   Number.parseInt(String(process.env.AUTH_RATE_LIMIT_WINDOW_MS || "600000"), 10) || 600_000;
 const AUTH_RATE_LIMIT_MAX = Number.parseInt(String(process.env.AUTH_RATE_LIMIT_MAX || "30"), 10) || 30;
@@ -912,8 +906,6 @@ function requireAdmin(req, res, next) {
 
 function requireVerifiedEmail(req, res, next) {
   if (!req.user?.id) return res.status(401).json({ error: "Authentication required." });
-  if (SKIP_EMAIL_VERIFICATION) return next();
-  if (!req.user.emailVerifiedAt) return res.status(403).json({ error: "Email verification required." });
   return next();
 }
 
@@ -2148,9 +2140,6 @@ app.post("/api/auth/register", authRateLimiter, async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, 12);
   const role = ADMIN_EMAILS.has(email) ? "ADMIN" : "USER";
-  const rawToken = randomToken(24);
-  const tokenHash = sha256(rawToken);
-  const tokenExpiresAt = new Date(Date.now() + EMAIL_VERIFY_TOKEN_TTL_HOURS * 60 * 60 * 1000);
 
   try {
     let user = null;
@@ -2165,9 +2154,6 @@ app.post("/api/auth/register", authRateLimiter, async (req, res) => {
             passwordHash,
             role,
             authIdentities: { create: [{ provider: "LOCAL", providerUserId: email }] },
-            verificationTokens: {
-              create: [{ tokenHash, expiresAt: tokenExpiresAt }]
-            }
           }
         });
       } catch (error) {
@@ -2195,14 +2181,11 @@ app.post("/api/auth/register", authRateLimiter, async (req, res) => {
       if (error) {
         return res.status(500).json({ error: "Registered but failed to create session." });
       }
-      const verifyPath = `/api/auth/verify-email?token=${rawToken}`;
-      const verifyUrl = `${APP_BASE_URL}${verifyPath}`;
-      console.log(`[email-verify] ${email} -> ${verifyUrl}`);
+      const balance = await getUserBalance(user.id);
       return res.status(201).json({
         user: sanitizeUser(user),
-        email_verification_required: true,
-        verification_link: verifyPath,
-        verification_url: process.env.NODE_ENV === "production" ? undefined : verifyUrl
+        balance_usd: toDecimalString(balance, 4),
+        balance_credits: toDecimalString(balance, 4)
       });
     });
   } catch (error) {

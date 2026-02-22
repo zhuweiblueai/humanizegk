@@ -72,7 +72,7 @@ Open `http://localhost:3000`.
 
 - API keys are server-managed only (`OPENAI_API_KEY` / `XAI_API_KEY`). End users do not input keys in UI.
 - If either server key is missing, Step 1 blocks progress and shows configuration status.
-- `SKIP_EMAIL_VERIFICATION=true` is enabled by default in non-production for faster local testing; USD balance checks still apply.
+- Email verification is not required for generation; access control is based on authentication + positive USD balance.
 - Pillow handles cross-platform image padding before video generation.
 - Server prefers `./.venv/bin/python3` automatically (or set `PYTHON_BIN` to override).
 - `/api/process-product-image` is kept as an optional legacy utility; the active scene pipeline does not use it.

@@ -1872,10 +1872,7 @@ if (authRegisterBtn) {
       if (!res.ok) throw new Error(data.error || "Register failed.");
       await refreshAuthState();
       closeAuthModal({ clearResume: false });
-      const verifyText = data.verification_url
-        ? `Registered. Verify email using this dev link: ${data.verification_url}`
-        : "Registered. Please verify your email before generation.";
-      setStatus(verifyText);
+      setStatus("Registered and logged in.");
       await maybeResumeGenerateAfterAuth();
     } catch (error) {
       setStatus(`Error: ${error.message}`, "error");
