@@ -3129,7 +3129,7 @@ app.get("/api/admin/audit-logs", requireAdmin, async (req, res) => {
   return res.json({ audit_logs: logs });
 });
 
-app.post("/api/auto-prompt", requireAuth, requireVerifiedEmail, requirePositiveCredits, upload.single("image"), async (req, res) => {
+app.post("/api/auto-prompt", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
   const image = req.file;
   const count = normalizeVideoCount(req.body.count);
@@ -3356,7 +3356,7 @@ Return strict JSON only as {"directions":[{"direction":"...","scene_keywords":["
   }
 });
 
-app.post("/api/generate-scene-video-prompt", requireAuth, requireVerifiedEmail, requirePositiveCredits, upload.single("image"), async (req, res) => {
+app.post("/api/generate-scene-video-prompt", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
   const image = req.file;
   const duration = normalizeDuration(req.body.duration) || 4;
@@ -3411,7 +3411,7 @@ app.post("/api/generate-scene-video-prompt", requireAuth, requireVerifiedEmail, 
   }
 });
 
-app.post("/api/regenerate-scene", requireAuth, requireVerifiedEmail, requirePositiveCredits, upload.single("image"), async (req, res) => {
+app.post("/api/regenerate-scene", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
   const image = req.file;
   const duration = normalizeDuration(req.body.duration) || 4;
@@ -3641,7 +3641,7 @@ app.post("/api/regenerate-scene", requireAuth, requireVerifiedEmail, requirePosi
   }
 });
 
-app.post("/api/process-product-image", requireAuth, requireVerifiedEmail, requirePositiveCredits, upload.single("image"), async (req, res) => {
+app.post("/api/process-product-image", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
   const image = req.file;
 
@@ -3811,7 +3811,7 @@ async function generateFirstFrameImage({ openaiApiKey, imageFile, sceneDirection
   };
 }
 
-app.post("/api/generate-first-frames", requireAuth, requireVerifiedEmail, requirePositiveCredits, upload.single("image"), async (req, res) => {
+app.post("/api/generate-first-frames", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
   const image = req.file;
   const aspectRatio = String(req.body.aspect_ratio || "auto").trim();
@@ -3877,7 +3877,7 @@ app.post("/api/generate-first-frames", requireAuth, requireVerifiedEmail, requir
   }
 });
 
-app.post("/api/generate-first-frame", requireAuth, requireVerifiedEmail, requirePositiveCredits, upload.single("image"), async (req, res) => {
+app.post("/api/generate-first-frame", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
   const image = req.file;
   const aspectRatio = String(req.body.aspect_ratio || "auto").trim();
@@ -3925,7 +3925,7 @@ app.post("/api/generate-first-frame", requireAuth, requireVerifiedEmail, require
   }
 });
 
-app.post("/api/generate-video", requireAuth, requireVerifiedEmail, requirePositiveCredits, upload.single("image"), async (req, res) => {
+app.post("/api/generate-video", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
   const apiKey = resolveXaiApiKey(req.body.api_key);
   if (!apiKey) {
     return res.status(400).json({ error: "XAI API key is not configured." });
