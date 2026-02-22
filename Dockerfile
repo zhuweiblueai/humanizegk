@@ -14,6 +14,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+RUN npx prisma generate
 
 ENV NODE_ENV=production
 EXPOSE 3000
