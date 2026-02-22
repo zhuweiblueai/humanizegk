@@ -312,6 +312,17 @@ function normalizeTargetMarket(value) {
   return text || "Malaysia";
 }
 
+async function ensureAdminRoleByEmail(userId, email, currentRole) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!userId || !normalizedEmail) return null;
+  const shouldBeAdmin = ADMIN_EMAILS.has(normalizedEmail);
+  if (!shouldBeAdmin || String(currentRole || "").toUpperCase() === "ADMIN") return null;
+  return prisma.user.update({
+    where: { id: userId },
+    data: { role: "ADMIN" }
+  });
+}
+
 function isMalaysiaTargetMarket(value) {
   return normalizeTargetMarket(value).toLowerCase() === "malaysia";
 }
@@ -983,11 +994,16 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
             include: { user: true }
           });
           if (existingIdentity?.user) {
-            await prisma.user.update({
+            const loginUpdated = await prisma.user.update({
               where: { id: existingIdentity.user.id },
               data: { lastLoginAt: new Date(), emailVerifiedAt: existingIdentity.user.emailVerifiedAt || new Date() }
             });
-            return done(null, existingIdentity.user);
+            const adminPromoted = await ensureAdminRoleByEmail(
+              loginUpdated.id,
+              loginUpdated.email,
+              loginUpdated.role
+            );
+            return done(null, adminPromoted || loginUpdated);
           }
 
           const existingByEmail = await prisma.user.findUnique({ where: { email } });
@@ -1003,7 +1019,8 @@ if (GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
               where: { id: existingByEmail.id },
               data: { emailVerifiedAt: existingByEmail.emailVerifiedAt || new Date(), lastLoginAt: new Date() }
             });
-            return done(null, updated);
+            const adminPromoted = await ensureAdminRoleByEmail(updated.id, updated.email, updated.role);
+            return done(null, adminPromoted || updated);
           }
 
           const suffix = randomToken(4).slice(0, 6);
@@ -2216,23 +2233,25 @@ app.post("/api/auth/login", authRateLimiter, async (req, res) => {
       return res.status(401).json({ error: "Invalid credentials." });
     }
 
-    await prisma.user.update({
+    let updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() }
     });
+    const adminPromoted = await ensureAdminRoleByEmail(updatedUser.id, updatedUser.email, updatedUser.role);
+    if (adminPromoted) updatedUser = adminPromoted;
     await logAudit({
-      actorUserId: user.id,
-      targetUserId: user.id,
+      actorUserId: updatedUser.id,
+      targetUserId: updatedUser.id,
       action: "auth.login",
       payload: { email },
       req
     });
 
-    req.login(user, async (error) => {
+    req.login(updatedUser, async (error) => {
       if (error) return res.status(500).json({ error: "Failed to establish session." });
-      const balance = await getUserBalance(user.id);
+      const balance = await getUserBalance(updatedUser.id);
       return res.json({
-        user: sanitizeUser(user),
+        user: sanitizeUser(updatedUser),
         balance_usd: toDecimalString(balance, 4),
         balance_credits: toDecimalString(balance, 4)
       });
