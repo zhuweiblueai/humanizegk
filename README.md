@@ -66,6 +66,7 @@ Open `http://localhost:3000`.
 - `DEFAULT_PRICE_XAI_VIDEO_720P_PER_SECOND`
 - `DEFAULT_PRICE_XAI_VIDEO_INPUT_IMAGE`
 4. Deploy and use the generated `*.onrender.com` URL.
+5. Container startup runs `prisma migrate deploy` automatically before `node server.js`.
 
 ## Notes
 

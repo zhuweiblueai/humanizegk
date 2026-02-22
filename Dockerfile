@@ -3,7 +3,7 @@ FROM node:20-bookworm
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY requirements.txt ./
 RUN apt-get update \
@@ -18,4 +18,4 @@ RUN npx prisma generate
 
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node server.js"]
