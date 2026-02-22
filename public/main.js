@@ -115,6 +115,20 @@ function clearStatus() {
   statusBox.classList.remove("error");
 }
 
+async function readApiResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    const compact = String(text).replace(/\s+/g, " ").trim();
+    const preview = compact.length > 220 ? `${compact.slice(0, 220)}...` : compact;
+    return {
+      error: `Non-JSON response (${response.status}). ${preview || "Empty response body."}`
+    };
+  }
+}
+
 function setBusy(busy) {
   state.busy = busy;
   generatePromptsBtn.disabled = busy;
@@ -196,7 +210,7 @@ async function refreshAccountUsageSummary({ showStatus = false } = {}) {
   state.accountUsageLoading = true;
   renderAccountUsageModalContent();
   const res = await fetch("/api/account/summary");
-  const data = await res.json();
+  const data = await readApiResponse(res);
   if (!res.ok) {
     state.accountUsageLoading = false;
     renderAccountUsageModalContent();
@@ -248,7 +262,8 @@ function renderAuthUI() {
 
 async function refreshAuthState(showStatus = false) {
   const res = await fetch("/api/auth/me");
-  const data = await res.json();
+  const data = await readApiResponse(res);
+  if (!res.ok) throw new Error(data.error || "Failed to load auth state.");
   state.authUser = data?.authenticated ? data.user : null;
   state.authBalance = String(data?.balance_usd ?? data?.balance_credits ?? "0.0000");
   state.hasPlatformOpenAiKey = Boolean(data?.platform_api_keys?.openai);
@@ -452,10 +467,10 @@ async function refreshAdminData() {
     fetch("/api/admin/videos?limit=300")
   ]);
   const [usersData, overviewData, pricingData, videosData] = await Promise.all([
-    usersRes.json(),
-    overviewRes.json(),
-    pricingRes.json(),
-    videosRes.json()
+    readApiResponse(usersRes),
+    readApiResponse(overviewRes),
+    readApiResponse(pricingRes),
+    readApiResponse(videosRes)
   ]);
   if (!usersRes.ok) throw new Error(usersData.error || "Failed to load admin users.");
   if (!overviewRes.ok) throw new Error(overviewData.error || "Failed to load admin accounts overview.");
@@ -483,7 +498,7 @@ async function fetchAdminVideoDetail(usageEventId) {
   const id = String(usageEventId || "").trim();
   if (!id) return;
   const res = await fetch(`/api/admin/videos/${encodeURIComponent(id)}`);
-  const data = await res.json();
+  const data = await readApiResponse(res);
   if (!res.ok) throw new Error(data.error || "Failed to load video detail.");
   state.adminSelectedVideoDetail = data.video_detail || null;
   renderAdminPanel();
@@ -1222,7 +1237,7 @@ async function createVideoWithFormData(formData, index) {
     method: "POST",
     body: formData
   });
-  const data = await res.json();
+  const data = await readApiResponse(res);
   if (!res.ok) {
     addModelDebugEvent({
       provider: "xai",
@@ -1312,7 +1327,7 @@ async function requestFirstFrameAtIndex(index, { force = false } = {}) {
     method: "POST",
     body: reqData
   });
-  const data = await res.json();
+  const data = await readApiResponse(res);
   if (!res.ok) {
     if (data?.debug) {
       addModelDebugEvent({
@@ -1451,7 +1466,7 @@ async function requestRegeneratedSceneAtIndex(index) {
     method: "POST",
     body: reqData
   });
-  const data = await res.json();
+  const data = await readApiResponse(res);
 
   if (data?.direction_debug) {
     logDirectionDebug(data.direction_debug, !res.ok ? data.error || "Failed to regenerate scene." : undefined);
@@ -1517,7 +1532,7 @@ async function requestVideoPromptAtIndex(index) {
     method: "POST",
     body: reqData
   });
-  const data = await res.json();
+  const data = await readApiResponse(res);
 
   if (data?.prompt_debug) {
     addModelDebugEvent({
@@ -1672,7 +1687,7 @@ async function generatePromptsSequential() {
     method: "POST",
     body: reqData
   });
-  const data = await res.json();
+  const data = await readApiResponse(res);
   if (!res.ok) {
     if (data?.direction_debug) logDirectionDebug(data.direction_debug, data.error || "Failed to generate prompts.");
     if (Array.isArray(data?.prompt_debug)) {
@@ -1846,7 +1861,7 @@ if (authRegisterBtn) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (!res.ok) throw new Error(data.error || "Register failed.");
       await refreshAuthState();
       closeAuthModal({ clearResume: false });
@@ -1873,7 +1888,7 @@ if (authLoginBtn) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (!res.ok) throw new Error(data.error || "Login failed.");
       await refreshAuthState(false);
       closeAuthModal({ clearResume: false });
@@ -1888,7 +1903,7 @@ if (authLogoutBtn) {
   authLogoutBtn.addEventListener("click", async () => {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (!res.ok) throw new Error(data.error || "Logout failed.");
       state.authUser = null;
       state.authBalance = "0.0000";
@@ -1963,7 +1978,7 @@ if (grantCreditsBtn) {
           reason
         })
       });
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (!res.ok) throw new Error(data.error || "Failed to grant USD.");
 
       await refreshAdminData();

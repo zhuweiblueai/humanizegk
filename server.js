@@ -2084,31 +2084,36 @@ app.get("/api/config", (_req, res) => {
 });
 
 app.get("/api/auth/me", async (req, res) => {
-  if (!req.user?.id) {
+  try {
+    if (!req.user?.id) {
+      return res.json({
+        authenticated: false,
+        user: null,
+        balance_usd: "0.0000",
+        balance_credits: "0.0000",
+        google_oauth_enabled: Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
+        platform_api_keys: {
+          openai: Boolean(OPENAI_PLATFORM_API_KEY),
+          xai: Boolean(XAI_PLATFORM_API_KEY)
+        }
+      });
+    }
+    const balance = await getUserBalance(req.user.id);
     return res.json({
-      authenticated: false,
-      user: null,
-      balance_usd: "0.0000",
-      balance_credits: "0.0000",
+      authenticated: true,
+      user: sanitizeUser(req.user),
+      balance_usd: toDecimalString(balance, 4),
+      balance_credits: toDecimalString(balance, 4),
       google_oauth_enabled: Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
       platform_api_keys: {
         openai: Boolean(OPENAI_PLATFORM_API_KEY),
         xai: Boolean(XAI_PLATFORM_API_KEY)
       }
     });
+  } catch (error) {
+    console.error("auth_me_error", error);
+    return res.status(500).json({ error: "Failed to load auth state." });
   }
-  const balance = await getUserBalance(req.user.id);
-  return res.json({
-    authenticated: true,
-    user: sanitizeUser(req.user),
-    balance_usd: toDecimalString(balance, 4),
-    balance_credits: toDecimalString(balance, 4),
-    google_oauth_enabled: Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET),
-    platform_api_keys: {
-      openai: Boolean(OPENAI_PLATFORM_API_KEY),
-      xai: Boolean(XAI_PLATFORM_API_KEY)
-    }
-  });
 });
 
 app.post("/api/auth/register", authRateLimiter, async (req, res) => {
@@ -2192,45 +2197,50 @@ app.post("/api/auth/register", authRateLimiter, async (req, res) => {
 });
 
 app.post("/api/auth/login", authRateLimiter, async (req, res) => {
-  const email = String(req.body.email || req.body.identifier || "").trim().toLowerCase();
-  const password = String(req.body.password || "");
-  if (!email || !password) {
-    return res.status(400).json({ error: "email and password are required." });
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: "Invalid email format." });
-  }
+  try {
+    const email = String(req.body.email || req.body.identifier || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    if (!email || !password) {
+      return res.status(400).json({ error: "email and password are required." });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: "Invalid email format." });
+    }
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user?.passwordHash) {
-    return res.status(401).json({ error: "Invalid credentials." });
-  }
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) {
-    return res.status(401).json({ error: "Invalid credentials." });
-  }
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user?.passwordHash) {
+      return res.status(401).json({ error: "Invalid credentials." });
+    }
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      return res.status(401).json({ error: "Invalid credentials." });
+    }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { lastLoginAt: new Date() }
-  });
-  await logAudit({
-    actorUserId: user.id,
-    targetUserId: user.id,
-    action: "auth.login",
-    payload: { email },
-    req
-  });
-
-  req.login(user, async (error) => {
-    if (error) return res.status(500).json({ error: "Failed to establish session." });
-    const balance = await getUserBalance(user.id);
-    return res.json({
-      user: sanitizeUser(user),
-      balance_usd: toDecimalString(balance, 4),
-      balance_credits: toDecimalString(balance, 4)
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() }
     });
-  });
+    await logAudit({
+      actorUserId: user.id,
+      targetUserId: user.id,
+      action: "auth.login",
+      payload: { email },
+      req
+    });
+
+    req.login(user, async (error) => {
+      if (error) return res.status(500).json({ error: "Failed to establish session." });
+      const balance = await getUserBalance(user.id);
+      return res.json({
+        user: sanitizeUser(user),
+        balance_usd: toDecimalString(balance, 4),
+        balance_credits: toDecimalString(balance, 4)
+      });
+    });
+  } catch (error) {
+    console.error("auth_login_error", error);
+    return res.status(500).json({ error: "Failed to login. Please retry." });
+  }
 });
 
 app.post("/api/auth/logout", requireAuth, async (req, res) => {
@@ -4158,6 +4168,10 @@ app.post("/api/generate-video", requireAuth, requireVerifiedEmail, requirePositi
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+});
+
+app.use("/api", (_req, res) => {
+  return res.status(404).json({ error: "API route not found." });
 });
 
 app.listen(PORT, () => {
