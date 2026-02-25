@@ -4,6 +4,8 @@ const openHistoryModalBtn = document.getElementById("openHistoryModalBtn");
 const firstFrameList = document.getElementById("firstFrameList");
 const modelDebugBox = document.getElementById("modelDebugBox");
 const modelDebugSection = document.getElementById("modelDebugSection");
+const modelDebugBoxStep1 = document.getElementById("modelDebugBoxStep1");
+const modelDebugSectionStep1 = document.getElementById("modelDebugSectionStep1");
 
 const step2Panel = document.getElementById("step2Panel");
 const step3Panel = document.getElementById("step3Panel");
@@ -14,6 +16,7 @@ const tabStep3 = document.getElementById("tabStep3");
 const imageInput = document.getElementById("imageInput");
 const videoCountInput = document.getElementById("videoCountInput");
 const targetMarketInput = document.getElementById("targetMarketInput");
+const imageProviderSelect = document.getElementById("imageProviderSelect");
 const durationSelect = document.getElementById("durationSelect");
 const resolutionSelect = document.getElementById("resolutionSelect");
 const aspectRatioSelect = document.getElementById("aspectRatioSelect");
@@ -22,11 +25,17 @@ const generatePromptsBtn = document.getElementById("generatePromptsBtn");
 const summaryText = document.getElementById("summaryText");
 const referencePreview = document.getElementById("referencePreview");
 const clearDebugBtn = document.getElementById("clearDebugBtn");
+const clearDebugBtnStep1 = document.getElementById("clearDebugBtnStep1");
 const imageZoomModal = document.getElementById("imageZoomModal");
 const closeImageZoomBtn = document.getElementById("closeImageZoomBtn");
 const zoomedImage = document.getElementById("zoomedImage");
 const analysisOverlay = document.getElementById("analysisOverlay");
 const analysisOverlayImage = document.getElementById("analysisOverlayImage");
+const analysisDirectionsStatus = document.getElementById("analysisDirectionsStatus");
+const analysisFramesStatus = document.getElementById("analysisFramesStatus");
+const analysisCropStatus = document.getElementById("analysisCropStatus");
+const analysisFramesThumbs = document.getElementById("analysisFramesThumbs");
+const analysisCropThumbs = document.getElementById("analysisCropThumbs");
 const openAuthModalBtn = document.getElementById("openAuthModalBtn");
 const accountMenu = document.getElementById("accountMenu");
 const accountMenuBtn = document.getElementById("accountMenuBtn");
@@ -65,6 +74,12 @@ const adminVideoUserFilter = document.getElementById("adminVideoUserFilter");
 const adminVideosTable = document.getElementById("adminVideosTable");
 const adminVideosTableBody = document.getElementById("adminVideosTableBody");
 const adminVideoDetailBox = document.getElementById("adminVideoDetailBox");
+const sceneEditModal = document.getElementById("sceneEditModal");
+const closeSceneEditModalBtn = document.getElementById("closeSceneEditModalBtn");
+const sceneEditCancelBtn = document.getElementById("sceneEditCancelBtn");
+const sceneEditApplyBtn = document.getElementById("sceneEditApplyBtn");
+const sceneEditDirectionInput = document.getElementById("sceneEditDirectionInput");
+const sceneEditKeywordsInput = document.getElementById("sceneEditKeywordsInput");
 
 const HISTORY_KEY = "humanize_grok_video_history";
 
@@ -73,6 +88,7 @@ const state = {
   busy: false,
   imageFile: null,
   targetMarket: "Malaysia",
+  imageProvider: "openai",
   preparedPrompts: [],
   scenePlans: [],
   firstFrames: [],
@@ -100,7 +116,15 @@ const state = {
   adminPricingAlerts: [],
   adminVideoEvents: [],
   adminSelectedVideoDetail: null,
-  adminVideoFilterUserId: ""
+  adminVideoFilterUserId: "",
+  sceneEditIndex: -1,
+  referenceImagePreviewDataUri: "",
+  referenceImagePreviewKey: "",
+  analysisProgress: {
+    directions: { status: "waiting", text: "Waiting..." },
+    frames: { status: "waiting", text: "Waiting...", total: 0, done: 0, thumbs: [] },
+    crop: { status: "waiting", text: "Waiting...", total: 0, done: 0, thumbs: [] }
+  }
 };
 
 function setStatus(message, type = "info") {
@@ -117,6 +141,80 @@ function clearStatus() {
 
 function closeAccountMenu() {
   if (accountMenu) accountMenu.classList.remove("open");
+}
+
+function parseSceneKeywordsInput(value) {
+  const parts = String(value || "")
+    .split(/[,，/|;、\n]/g)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const out = [];
+  const seen = new Set();
+  parts.forEach((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(item);
+  });
+  return out.slice(0, 8);
+}
+
+function createDefaultAnalysisProgress() {
+  return {
+    directions: { status: "waiting", text: "Waiting..." },
+    frames: { status: "waiting", text: "Waiting...", total: 0, done: 0, thumbs: [] },
+    crop: { status: "waiting", text: "Waiting...", total: 0, done: 0, thumbs: [] }
+  };
+}
+
+function renderAnalysisStatusElement(element, { status = "waiting", text = "" } = {}) {
+  if (!element) return;
+  element.classList.remove("done", "error", "generating");
+  element.innerHTML = "";
+  if (status === "done") element.classList.add("done");
+  if (status === "error") element.classList.add("error");
+  if (status === "generating") {
+    element.classList.add("generating");
+    const spinner = document.createElement("span");
+    spinner.className = "analysis-spinner-inline";
+    spinner.setAttribute("aria-hidden", "true");
+    element.appendChild(spinner);
+  }
+  const textNode = document.createElement("span");
+  textNode.textContent = text || "";
+  element.appendChild(textNode);
+}
+
+function renderAnalysisThumbs(container, thumbs = []) {
+  if (!container) return;
+  container.innerHTML = "";
+  const list = Array.isArray(thumbs) ? thumbs : [];
+  list.slice(0, 8).forEach((item, index) => {
+    if (!item) return;
+    const img = document.createElement("img");
+    img.src = item;
+    img.alt = `progress thumbnail ${index + 1}`;
+    container.appendChild(img);
+  });
+}
+
+function renderAnalysisProgress() {
+  const progress = state.analysisProgress || createDefaultAnalysisProgress();
+  renderAnalysisStatusElement(analysisDirectionsStatus, progress.directions);
+  renderAnalysisStatusElement(analysisFramesStatus, progress.frames);
+  renderAnalysisStatusElement(analysisCropStatus, progress.crop);
+  renderAnalysisThumbs(analysisFramesThumbs, progress.frames?.thumbs || []);
+  renderAnalysisThumbs(analysisCropThumbs, progress.crop?.thumbs || []);
+}
+
+function updateAnalysisProgress(patch = {}) {
+  const current = state.analysisProgress || createDefaultAnalysisProgress();
+  state.analysisProgress = {
+    directions: { ...current.directions, ...(patch.directions || {}) },
+    frames: { ...current.frames, ...(patch.frames || {}) },
+    crop: { ...current.crop, ...(patch.crop || {}) }
+  };
+  renderAnalysisProgress();
 }
 
 async function readApiResponse(response) {
@@ -442,12 +540,22 @@ function renderAdminPanel() {
       adminVideoDetailBox.innerHTML = '<p class="muted">Click one row in the list to view image/video detail.</p>';
     } else {
       const promptText = normalizePromptText(detail.final_prompt || "");
-      const hasImage = Boolean(detail.input_image_data_uri);
+      const originalImageDataUri = detail.source_reference_image_data_uri || null;
+      const firstFrameDataUri = detail.first_frame_image_data_uri || detail.input_image_data_uri || null;
+      const hasOriginalImage = Boolean(originalImageDataUri);
+      const hasFirstFrameImage = Boolean(firstFrameDataUri);
       const hasVideo = Boolean(detail.video_url);
       adminVideoDetailBox.innerHTML = `
         <div class="admin-video-detail-grid">
-          <div>
-            ${hasImage ? `<img src="${escapeHtml(detail.input_image_data_uri)}" alt="video input frame" />` : '<p class="muted">Original uploaded input image was not stored for this event.</p>'}
+          <div class="admin-video-media-grid">
+            <div class="admin-video-media-card">
+              <p class="muted">Original Uploaded Image</p>
+              ${hasOriginalImage ? `<img src="${escapeHtml(originalImageDataUri)}" alt="original uploaded product image" />` : '<p class="muted">Not stored for this event.</p>'}
+            </div>
+            <div class="admin-video-media-card">
+              <p class="muted">Video First-Frame Image</p>
+              ${hasFirstFrameImage ? `<img src="${escapeHtml(firstFrameDataUri)}" alt="video first-frame image" />` : '<p class="muted">Not stored for this event.</p>'}
+            </div>
           </div>
           <div>
             <p class="muted">Account: ${escapeHtml(detail.user_email || detail.user_id || "-")}</p>
@@ -513,6 +621,9 @@ function applyAdvancedPanelsVisibility() {
   if (modelDebugSection) {
     modelDebugSection.classList.toggle("hidden", !state.advancedPanelsVisible);
   }
+  if (modelDebugSectionStep1) {
+    modelDebugSectionStep1.classList.toggle("hidden", !state.advancedPanelsVisible);
+  }
 }
 
 function getVideoCount() {
@@ -530,6 +641,17 @@ function getTargetMarket() {
   const market = normalizeTargetMarketValue(targetMarketInput?.value || state.targetMarket);
   state.targetMarket = market;
   return market;
+}
+
+function normalizeImageProvider(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "xai" ? "xai" : "openai";
+}
+
+function getSelectedImageProvider() {
+  const provider = normalizeImageProvider(imageProviderSelect?.value || state.imageProvider);
+  state.imageProvider = provider;
+  return provider;
 }
 
 function normalizePromptText(input) {
@@ -600,21 +722,25 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function renderModelDebug() {
-  if (!modelDebugBox) return;
-  modelDebugBox.innerHTML = "";
+function renderModelDebugBox(box) {
+  if (!box) return;
+  box.innerHTML = "";
   if (!state.modelDebugEvents.length) {
-    modelDebugBox.innerHTML = '<p class="muted">No model requests yet.</p>';
+    box.innerHTML = '<p class="muted">No model requests yet.</p>';
     return;
   }
-
   const pre = document.createElement("pre");
   pre.className = "prompt-preview";
   pre.textContent = safeJsonStringify(state.modelDebugEvents);
-  modelDebugBox.appendChild(pre);
+  box.appendChild(pre);
   requestAnimationFrame(() => {
     pre.scrollTop = pre.scrollHeight;
   });
+}
+
+function renderModelDebug() {
+  renderModelDebugBox(modelDebugBox);
+  renderModelDebugBox(modelDebugBoxStep1);
 }
 
 function clearModelDebug() {
@@ -791,6 +917,21 @@ function getLatestSceneVideo(index) {
   return state.sceneVideos[index] || null;
 }
 
+function getScenePromptText(index) {
+  const direct = normalizePromptText(state.preparedPrompts?.[index] || "");
+  if (direct) return direct;
+  return normalizePromptText(state.scenePlans?.[index]?.prompt || "");
+}
+
+function setScenePromptText(index, value) {
+  const prompt = normalizePromptText(value || "");
+  if (!Array.isArray(state.preparedPrompts)) state.preparedPrompts = [];
+  state.preparedPrompts[index] = prompt;
+  if (Array.isArray(state.scenePlans) && state.scenePlans[index]) {
+    state.scenePlans[index].prompt = prompt;
+  }
+}
+
 function renderFirstFrames() {
   firstFrameList.innerHTML = "";
 
@@ -805,27 +946,40 @@ function renderFirstFrames() {
     const card = document.createElement("article");
     card.className = "first-frame-card";
 
+    const head = document.createElement("div");
+    head.className = "scene-card-head";
+
     const title = document.createElement("p");
-    title.className = "muted";
+    title.className = "scene-title muted";
     title.textContent = `Scene #${i + 1}`;
 
+    const openRegenModal = document.createElement("button");
+    openRegenModal.type = "button";
+    openRegenModal.className = "secondary-btn";
+    openRegenModal.textContent = "Regenerate Image";
+
     const directionTitle = document.createElement("p");
-    directionTitle.className = "muted";
+    directionTitle.className = "scene-field-label muted";
     directionTitle.textContent = "Scene Direction";
 
     const directionContent = document.createElement("pre");
     directionContent.className = "prompt-preview";
     directionContent.textContent = normalizePromptText(plan.direction || "(missing scene direction)");
 
-    const keywords = document.createElement("p");
-    keywords.className = "muted";
-    keywords.textContent = `Scene Keywords: ${plan.scene_keywords?.length ? plan.scene_keywords.join(", ") : "(none)"}`;
+    const keywordsTitle = document.createElement("p");
+    keywordsTitle.className = "scene-field-label muted";
+    keywordsTitle.textContent = "Scene Keywords";
+
+    const keywordsContent = document.createElement("pre");
+    keywordsContent.className = "prompt-preview";
+    keywordsContent.textContent = plan.scene_keywords?.length ? plan.scene_keywords.join(", ") : "(none)";
 
     const imagePromptTitle = document.createElement("p");
-    imagePromptTitle.className = "muted";
+    imagePromptTitle.className = "scene-field-label muted";
     imagePromptTitle.textContent = "Image Prompt";
 
     const frame = state.firstFrames?.[i] || {};
+    const currentScenePromptText = getScenePromptText(i);
     const imagePromptText =
       normalizePromptText(frame.prompt) ||
       normalizePromptText(frame?.debug?.request?.prompt) ||
@@ -835,14 +989,24 @@ function renderFirstFrames() {
     const imagePromptContent = document.createElement("pre");
     imagePromptContent.className = "prompt-preview";
     imagePromptContent.textContent = imagePromptText;
-    imagePromptTitle.classList.toggle("hidden", !state.advancedPanelsVisible);
-    imagePromptContent.classList.toggle("hidden", !state.advancedPanelsVisible);
+    const imagePromptBlock = document.createElement("div");
+    imagePromptBlock.className = "scene-meta-block scene-image-prompt-block";
+    imagePromptBlock.classList.toggle("hidden", !state.advancedPanelsVisible);
+    imagePromptBlock.append(imagePromptTitle, imagePromptContent);
 
     const hasImage = typeof frame.dataUri === "string" && frame.dataUri.length;
     const frameStatus = state.firstFrameStatuses?.[i] || (hasImage ? "done" : "idle");
     const videoStatus = state.videoStatuses?.[i] || "idle";
     const imageGenerating = frameStatus === "generating";
-    const videoBusy = videoStatus === "prompting" || videoStatus === "generating";
+    const videoPromptPending = videoStatus === "prompting" && !currentScenePromptText;
+    const videoBusy = videoPromptPending || videoStatus === "generating";
+
+    openRegenModal.disabled = imageGenerating || videoBusy;
+    openRegenModal.addEventListener("click", () => {
+      if (imageGenerating || videoBusy) return;
+      openSceneEditModal(i);
+    });
+    head.append(title, openRegenModal);
 
     const frameZone = document.createElement("div");
     frameZone.className = "frame-click-zone";
@@ -901,7 +1065,7 @@ function renderFirstFrames() {
 
     const videoStep = document.createElement("p");
     videoStep.className = "video-step-status";
-    if (videoStatus === "prompting") {
+    if (videoPromptPending) {
       videoStep.textContent = "Video Step 1/2: Generating prompt from scene + frame...";
       videoStep.classList.remove("hidden");
     } else if (videoStatus === "generating") {
@@ -917,25 +1081,37 @@ function renderFirstFrames() {
     } else {
       videoStep.classList.add("hidden");
     }
+    const promptPane = document.createElement("div");
+    promptPane.className = "scene-prompt-pane";
 
-    const actions = document.createElement("div");
-    actions.className = "history-actions";
+    const promptLabel = document.createElement("p");
+    promptLabel.className = "scene-field-label muted";
+    promptLabel.textContent = "Video Prompt";
 
-    const regen = document.createElement("button");
-    regen.type = "button";
-    regen.className = "secondary-btn";
-    regen.textContent = "Regenerate";
-    regen.disabled = imageGenerating || videoBusy;
-    regen.addEventListener("click", async () => {
-      if (imageGenerating || videoBusy) return;
-      try {
-        await regenerateFirstFrame(i);
-        setStatus(`Replaced first frame #${i + 1}.`);
-      } catch (error) {
-        setStatus(`Error: ${error.message}`, "error");
-      }
+    const promptLoading = document.createElement("p");
+    promptLoading.className = "scene-prompt-loading";
+    promptLoading.classList.toggle("hidden", !videoPromptPending);
+    promptLoading.innerHTML = '<span class="analysis-spinner-inline" aria-hidden="true"></span><span>Generating video prompt...</span>';
+
+    const promptInput = document.createElement("textarea");
+    promptInput.className = "scene-video-prompt-input";
+    promptInput.placeholder = "Click Generate Video to auto-generate, or type your own prompt.";
+    promptInput.value = currentScenePromptText;
+    promptInput.disabled = videoBusy;
+    promptInput.addEventListener("input", () => {
+      setScenePromptText(i, promptInput.value);
+    });
+    promptInput.addEventListener("change", () => {
+      setScenePromptText(i, promptInput.value);
+      promptInput.value = getScenePromptText(i);
     });
 
+    const promptHint = document.createElement("p");
+    promptHint.className = "scene-prompt-hint";
+    promptHint.textContent = "Used for the next video generation. You can edit before generating.";
+
+    const promptActions = document.createElement("div");
+    promptActions.className = "scene-prompt-actions";
     const generate = document.createElement("button");
     generate.type = "button";
     generate.textContent = videoBusy ? "Generating..." : "Generate Video";
@@ -948,16 +1124,8 @@ function renderFirstFrames() {
         setStatus(`Error: ${error.message}`, "error");
       }
     });
-
-    const videoPromptTitle = document.createElement("p");
-    videoPromptTitle.className = "muted";
-    videoPromptTitle.textContent = "Video Prompt";
-
-    const videoPromptContent = document.createElement("pre");
-    videoPromptContent.className = "prompt-preview";
-    videoPromptContent.textContent = normalizePromptText(plan.prompt || "(video prompt not generated yet)");
-    videoPromptTitle.classList.toggle("hidden", !state.advancedPanelsVisible);
-    videoPromptContent.classList.toggle("hidden", !state.advancedPanelsVisible);
+    promptActions.append(generate);
+    promptPane.append(promptLabel, promptLoading, promptInput, promptHint, promptActions);
 
     const latestVideo = getLatestSceneVideo(i);
     const videoTitle = document.createElement("p");
@@ -998,21 +1166,32 @@ function renderFirstFrames() {
       videoWrap.append(videoEl, videoActions);
     }
 
+    const framePane = document.createElement("div");
+    framePane.className = "scene-frame-pane";
     frameZone.append(img, placeholder);
-    actions.append(regen, generate);
+    framePane.append(frameZone, status, videoStep);
+
+    const main = document.createElement("div");
+    main.className = "scene-card-main";
+    main.append(framePane, promptPane);
+
+    const sceneMeta = document.createElement("div");
+    sceneMeta.className = "scene-meta-grid";
+
+    const directionBlock = document.createElement("div");
+    directionBlock.className = "scene-meta-block";
+    directionBlock.append(directionTitle, directionContent);
+
+    const keywordsBlock = document.createElement("div");
+    keywordsBlock.className = "scene-meta-block";
+    keywordsBlock.append(keywordsTitle, keywordsContent);
+
+    sceneMeta.append(directionBlock, keywordsBlock, imagePromptBlock);
+
     card.append(
-      title,
-      directionTitle,
-      directionContent,
-      keywords,
-      imagePromptTitle,
-      imagePromptContent,
-      frameZone,
-      status,
-      videoStep,
-      actions,
-      videoPromptTitle,
-      videoPromptContent,
+      head,
+      sceneMeta,
+      main,
       videoTitle,
       videoWrap
     );
@@ -1071,6 +1250,58 @@ function dataUriToBlob(dataUri) {
   const bytes = new Uint8Array(len);
   for (let i = 0; i < len; i += 1) bytes[i] = binary.charCodeAt(i);
   return new Blob([bytes], { type: mime });
+}
+
+function fileKey(file) {
+  if (!file) return "";
+  return [file.name || "", file.size || 0, file.lastModified || 0].join(":");
+}
+
+async function fileToDataUri(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read image file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function createDownscaledDataUri(dataUri, maxWidth = 768, maxHeight = 768, quality = 0.82) {
+  if (!dataUri) return "";
+  const image = await new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Failed to load image for preview."));
+    img.src = dataUri;
+  });
+  const sourceWidth = image.naturalWidth || image.width || 0;
+  const sourceHeight = image.naturalHeight || image.height || 0;
+  if (!sourceWidth || !sourceHeight) return "";
+
+  const scale = Math.min(1, maxWidth / sourceWidth, maxHeight / sourceHeight);
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return "";
+  context.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+async function ensureReferenceImagePreviewDataUri() {
+  const file = state.imageFile;
+  if (!file) return "";
+  const key = fileKey(file);
+  if (state.referenceImagePreviewDataUri && state.referenceImagePreviewKey === key) {
+    return state.referenceImagePreviewDataUri;
+  }
+  const rawDataUri = await fileToDataUri(file);
+  const previewDataUri = await createDownscaledDataUri(rawDataUri, 768, 768, 0.82);
+  state.referenceImagePreviewDataUri = previewDataUri;
+  state.referenceImagePreviewKey = key;
+  return previewDataUri;
 }
 
 function parseAspectRatioValue(value) {
@@ -1142,29 +1373,79 @@ async function cropDataUriToAspectRatio(dataUri, aspectRatioValue) {
 
 async function normalizeExistingFramesToAspectRatio() {
   const ratioText = String(aspectRatioSelect?.value || "").trim().toLowerCase();
-  if (!ratioText || ratioText === "auto") return;
   if (!Array.isArray(state.firstFrames) || !state.firstFrames.length) return;
+  const total = state.firstFrames.filter((frame) => Boolean(frame?.dataUri)).length;
+  if (!ratioText || ratioText === "auto") {
+    const thumbs = (state.firstFrames || []).map((item) => item?.dataUri || "").filter(Boolean);
+    updateAnalysisProgress({
+      crop: {
+        status: "done",
+        text: `Skipped (auto ratio). ${thumbs.length}/${Math.max(thumbs.length, total)} ready.`,
+        total: Math.max(thumbs.length, total),
+        done: thumbs.length,
+        thumbs
+      }
+    });
+    return;
+  }
+
+  updateAnalysisProgress({
+    crop: {
+      status: "generating",
+      text: `Cropping... (0/${total})`,
+      total,
+      done: 0,
+      thumbs: []
+    }
+  });
 
   let changed = false;
+  let processed = 0;
   for (let i = 0; i < state.firstFrames.length; i += 1) {
     const frame = state.firstFrames[i];
     if (!frame?.dataUri) continue;
+    processed += 1;
     const cropResult = await cropDataUriToAspectRatio(frame.dataUri, ratioText);
-    if (!cropResult?.cropped || !cropResult?.dataUri) continue;
-    state.firstFrames[i] = {
-      ...frame,
-      dataUri: cropResult.dataUri,
-      mime: "image/png",
-      debug: {
-        ...(frame.debug || {}),
-        client_aspect_ratio_crop: {
-          applied: true,
-          target_aspect_ratio: ratioText
+    if (cropResult?.cropped && cropResult?.dataUri) {
+      state.firstFrames[i] = {
+        ...frame,
+        dataUri: cropResult.dataUri,
+        mime: "image/png",
+        debug: {
+          ...(frame.debug || {}),
+          client_aspect_ratio_crop: {
+            applied: true,
+            target_aspect_ratio: ratioText
+          }
         }
+      };
+      changed = true;
+    }
+    const thumbs = (state.firstFrames || []).map((item) => item?.dataUri || "").filter(Boolean);
+    updateAnalysisProgress({
+      crop: {
+        status: "generating",
+        text: `Cropping... (${processed}/${total})`,
+        total,
+        done: processed,
+        thumbs
       }
-    };
-    changed = true;
+    });
   }
+
+  if (!changed) {
+    processed = total;
+  }
+  const thumbs = (state.firstFrames || []).map((item) => item?.dataUri || "").filter(Boolean);
+  updateAnalysisProgress({
+    crop: {
+      status: "done",
+      text: `Completed ${processed}/${total}.`,
+      total,
+      done: processed,
+      thumbs
+    }
+  });
 
   if (changed) {
     renderFirstFrames();
@@ -1182,6 +1463,26 @@ function closeImageZoom() {
   if (!imageZoomModal || !zoomedImage) return;
   zoomedImage.src = "";
   imageZoomModal.classList.add("hidden");
+}
+
+function openSceneEditModal(index) {
+  if (!sceneEditModal) return;
+  closeAccountMenu();
+  const scene = state.scenePlans?.[index] || {};
+  state.sceneEditIndex = Number.isInteger(index) ? index : -1;
+  if (sceneEditDirectionInput) {
+    sceneEditDirectionInput.value = normalizePromptText(scene.direction || "");
+  }
+  if (sceneEditKeywordsInput) {
+    const keywords = Array.isArray(scene.scene_keywords) ? scene.scene_keywords : [];
+    sceneEditKeywordsInput.value = keywords.join(", ");
+  }
+  sceneEditModal.classList.remove("hidden");
+}
+
+function closeSceneEditModal() {
+  if (sceneEditModal) sceneEditModal.classList.add("hidden");
+  state.sceneEditIndex = -1;
 }
 
 function openAuthModal({ resumeGenerate = false } = {}) {
@@ -1208,6 +1509,8 @@ function closeAdminModal() {
 
 function showAnalysisOverlay(file) {
   if (!analysisOverlay) return;
+  state.analysisProgress = createDefaultAnalysisProgress();
+  renderAnalysisProgress();
   if (state.analysisOverlayImageUrl) {
     URL.revokeObjectURL(state.analysisOverlayImageUrl);
     state.analysisOverlayImageUrl = "";
@@ -1229,6 +1532,8 @@ function showAnalysisOverlay(file) {
 function hideAnalysisOverlay() {
   if (!analysisOverlay) return;
   analysisOverlay.classList.add("hidden");
+  state.analysisProgress = createDefaultAnalysisProgress();
+  renderAnalysisProgress();
   if (analysisOverlayImage) {
     analysisOverlayImage.src = "";
     analysisOverlayImage.classList.add("hidden");
@@ -1279,7 +1584,7 @@ async function createVideoWithFormData(formData, index) {
   return data;
 }
 
-function buildVideoFormData(promptText, promptIndex) {
+async function buildVideoFormData(promptText, promptIndex) {
   const formData = new FormData();
   formData.append("prompt", promptText);
   formData.append("target_market", getTargetMarket());
@@ -1297,6 +1602,10 @@ function buildVideoFormData(promptText, promptIndex) {
     throw new Error(`First frame #${promptIndex + 1} is invalid.`);
   }
   formData.append("image", blob, `first-frame-${promptIndex + 1}.png`);
+  const sourceReferenceImageDataUri = await ensureReferenceImagePreviewDataUri().catch(() => "");
+  if (sourceReferenceImageDataUri) {
+    formData.append("source_reference_image_data_uri", sourceReferenceImageDataUri);
+  }
 
   return formData;
 }
@@ -1316,7 +1625,9 @@ async function requestFirstFrameAtIndex(index, { force = false } = {}) {
   if (!force && existing?.dataUri) return existing;
 
   const reqData = new FormData();
+  const imageProvider = getSelectedImageProvider();
   reqData.append("aspect_ratio", aspectRatioSelect.value);
+  reqData.append("image_provider", imageProvider);
   reqData.append("scene_direction", sceneDirection);
   reqData.append("scene_keywords", JSON.stringify(scenePlan.scene_keywords || []));
   reqData.append("prompt", promptText);
@@ -1325,8 +1636,8 @@ async function requestFirstFrameAtIndex(index, { force = false } = {}) {
   reqData.append("image", state.imageFile, state.imageFile.name);
 
   addModelDebugEvent({
-    provider: "openai",
-    operation: `images/edits (first frame #${index + 1})`,
+    provider: imageProvider,
+    operation: `image generation (first frame #${index + 1})`,
     stage: "request_sent"
   });
 
@@ -1338,8 +1649,8 @@ async function requestFirstFrameAtIndex(index, { force = false } = {}) {
   if (!res.ok) {
     if (data?.debug) {
       addModelDebugEvent({
-        provider: "openai",
-        operation: `images/edits (first frame #${index + 1})`,
+        provider: normalizeImageProvider(data?.model_provider || imageProvider),
+        operation: `image generation (first frame #${index + 1})`,
         request: data.debug.request || null,
         response: data.debug.response || null,
         error: data.error || "Failed to generate first frame."
@@ -1370,8 +1681,8 @@ async function requestFirstFrameAtIndex(index, { force = false } = {}) {
 
   if (data?.debug) {
     addModelDebugEvent({
-      provider: "openai",
-      operation: `images/edits (first frame #${index + 1})`,
+      provider: normalizeImageProvider(data?.model_provider || imageProvider),
+      operation: `image generation (first frame #${index + 1})`,
       request: data.debug.request || null,
       response: data.debug.response || null
     });
@@ -1425,6 +1736,15 @@ async function generateFirstFrames(force = false) {
 
   let finished = 0;
   setStatus(`Generating first-frame images (0/${indicesToGenerate.length})...`);
+  updateAnalysisProgress({
+    frames: {
+      status: "generating",
+      text: `Generating... (0/${indicesToGenerate.length})`,
+      total: indicesToGenerate.length,
+      done: 0,
+      thumbs: []
+    }
+  });
   renderFirstFrames();
   renderSnapshot();
 
@@ -1440,6 +1760,18 @@ async function generateFirstFrames(force = false) {
     } finally {
       finished += 1;
       setStatus(`Generating first-frame images (${finished}/${indicesToGenerate.length})...`);
+      const readyThumbs = (state.firstFrames || [])
+        .map((item) => item?.dataUri || "")
+        .filter(Boolean);
+      updateAnalysisProgress({
+        frames: {
+          status: "generating",
+          text: `Generating... (${finished}/${indicesToGenerate.length})`,
+          total: indicesToGenerate.length,
+          done: finished,
+          thumbs: readyThumbs
+        }
+      });
       renderFirstFrames();
       renderSnapshot();
     }
@@ -1448,65 +1780,67 @@ async function generateFirstFrames(force = false) {
   const results = await Promise.allSettled(tasks);
   const failed = results.filter((r) => r.status === "rejected").length;
   if (failed > 0) {
-    throw new Error(`Failed to generate ${failed} first-frame image(s).`);
+    const failedMessages = results
+      .filter((r) => r.status === "rejected")
+      .map((r) => normalizePromptText(r.reason?.message || r.reason || ""))
+      .filter(Boolean);
+    const safetyMessage =
+      failedMessages.find((msg) =>
+        /rejected by the safety system|moderation_blocked|safety_violations/i.test(msg)
+      ) || "";
+    const detailedMessage = safetyMessage || failedMessages[0] || "";
+    const readyThumbs = (state.firstFrames || [])
+      .map((item) => item?.dataUri || "")
+      .filter(Boolean);
+    updateAnalysisProgress({
+      frames: {
+        status: "error",
+        text: `Failed ${failed}, ready ${readyThumbs.length}/${indicesToGenerate.length}.`,
+        total: indicesToGenerate.length,
+        done: readyThumbs.length,
+        thumbs: readyThumbs
+      }
+    });
+    throw new Error(
+      detailedMessage
+        ? `Failed to generate ${failed} first-frame image(s). ${detailedMessage}`
+        : `Failed to generate ${failed} first-frame image(s).`
+    );
   }
+  const readyThumbs = (state.firstFrames || [])
+    .map((item) => item?.dataUri || "")
+    .filter(Boolean);
+  updateAnalysisProgress({
+    frames: {
+      status: "done",
+      text: `Completed ${readyThumbs.length}/${indicesToGenerate.length}.`,
+      total: indicesToGenerate.length,
+      done: readyThumbs.length,
+      thumbs: readyThumbs
+    }
+  });
 }
 
-async function requestRegeneratedSceneAtIndex(index) {
-  if (!state.imageFile) throw new Error("Reference image is required.");
-  const total = state.preparedPrompts.length;
-  if (!total) throw new Error("No generated scenes found. Please run Generate Prompts first.");
-
-  const existingDirections = (state.scenePlans || [])
-    .map((scene, i) => (i === index ? "" : normalizePromptText(scene?.direction || "")))
-    .filter(Boolean);
-
-  const reqData = new FormData();
-  reqData.append("image", state.imageFile, state.imageFile.name);
-  reqData.append("target_market", getTargetMarket());
-  reqData.append("duration", durationSelect.value);
-  reqData.append("index", String(index));
-  reqData.append("total", String(total));
-  reqData.append("existing_directions", JSON.stringify(existingDirections));
-
-  const res = await fetch("/api/regenerate-scene", {
-    method: "POST",
-    body: reqData
-  });
-  const data = await readApiResponse(res);
-
-  if (data?.direction_debug) {
-    logDirectionDebug(data.direction_debug, !res.ok ? data.error || "Failed to regenerate scene." : undefined);
+function applySceneEditsAtIndex(index, { direction, sceneKeywords }) {
+  const current = state.scenePlans?.[index] || normalizeScenePlanEntry({}, "");
+  const nextDirection = normalizePromptText(direction || "");
+  if (!nextDirection) {
+    throw new Error("Scene direction is required.");
   }
-  if (data?.prompt_debug) {
-    addModelDebugEvent({
-      provider: "openai",
-      operation: `chat/completions (scene prompt regenerate #${index + 1})`,
-      request: data.prompt_debug.request || null,
-      response: { ...(data.prompt_debug.response || {}), raw: data.prompt_debug.raw || null },
-      ...(!res.ok && data.error ? { error: data.error } : {})
-    });
-  }
-
-  if (!res.ok) {
-    throw new Error(data.error || "Failed to regenerate scene.");
-  }
-
-  const direction = normalizePromptText(data?.scene?.direction || data?.scene?.scene_direction || "");
-  if (!direction) {
-    throw new Error("Regenerated scene is incomplete.");
-  }
-
-  const nextScene = normalizeScenePlanEntry(data.scene, "");
+  const nextKeywords = Array.isArray(sceneKeywords) ? sceneKeywords : [];
+  const nextScene = {
+    ...current,
+    direction: nextDirection,
+    scene_keywords: nextKeywords
+  };
   state.scenePlans[index] = nextScene;
-  state.preparedPrompts[index] = "";
+  setScenePromptText(index, "");
   state.firstFrames[index] = { dataUri: null, mime: null, prompt: null, debug: null };
   state.videoStatuses[index] = "idle";
   if (!Array.isArray(state.videoErrors)) state.videoErrors = [];
   state.videoErrors[index] = "";
   if (!Array.isArray(state.sceneVideos)) state.sceneVideos = [];
   state.sceneVideos[index] = null;
-  renderPromptPlan();
 }
 
 async function requestVideoPromptAtIndex(index) {
@@ -1557,23 +1891,59 @@ async function requestVideoPromptAtIndex(index) {
 
   const prompt = normalizePromptText(data.prompt);
   if (!prompt) throw new Error(`Scene #${index + 1} video prompt is invalid.`);
-  if (!Array.isArray(state.preparedPrompts)) state.preparedPrompts = [];
-  state.preparedPrompts[index] = prompt;
-  if (Array.isArray(state.scenePlans) && state.scenePlans[index]) {
-    state.scenePlans[index].prompt = prompt;
-  }
+  setScenePromptText(index, prompt);
   renderPromptPlan();
   return prompt;
 }
 
-async function regenerateFirstFrame(index) {
+async function generateVideoPromptsForAllScenes({ force = false } = {}) {
+  if (!Array.isArray(state.scenePlans) || !state.scenePlans.length) return;
+  if (!Array.isArray(state.videoStatuses)) state.videoStatuses = state.scenePlans.map(() => "idle");
+  if (!Array.isArray(state.videoErrors)) state.videoErrors = state.scenePlans.map(() => "");
+
+  const indices = [];
+  for (let i = 0; i < state.scenePlans.length; i += 1) {
+    const existing = getScenePromptText(i);
+    if (!force && existing) continue;
+    indices.push(i);
+  }
+  if (!indices.length) return;
+
+  let finished = 0;
+  let failed = 0;
+  setStatus(`Generating scene video prompts (0/${indices.length})...`);
+
+  for (const index of indices) {
+    state.videoStatuses[index] = "prompting";
+    state.videoErrors[index] = "";
+    renderFirstFrames();
+    try {
+      await requestVideoPromptAtIndex(index);
+      state.videoStatuses[index] = "idle";
+    } catch (error) {
+      failed += 1;
+      state.videoStatuses[index] = "error";
+      state.videoErrors[index] = normalizePromptText(error?.message || "Failed to generate scene video prompt.");
+    } finally {
+      finished += 1;
+      setStatus(`Generating scene video prompts (${finished}/${indices.length})...`);
+      renderFirstFrames();
+    }
+  }
+
+  return { failed, total: indices.length };
+}
+
+async function regenerateFirstFrame(index, overrides = null) {
   setStatus(`Regenerating first frame #${index + 1}...`);
   if (!Array.isArray(state.firstFrameStatuses)) state.firstFrameStatuses = [];
+  if (overrides && typeof overrides === "object") {
+    applySceneEditsAtIndex(index, overrides);
+  }
   state.firstFrameStatuses[index] = "generating";
   renderFirstFrames();
   renderSnapshot();
   try {
-    await requestRegeneratedSceneAtIndex(index);
     await generateFirstFrameAtIndex(index, { force: true });
     state.firstFrameStatuses[index] = "done";
   } catch (error) {
@@ -1592,7 +1962,9 @@ async function generateVideoForIndex(index) {
   }
   if (!Array.isArray(state.videoStatuses)) state.videoStatuses = [];
   if (!Array.isArray(state.videoErrors)) state.videoErrors = [];
-  if (state.videoStatuses[index] === "prompting" || state.videoStatuses[index] === "generating") {
+  const existingPrompt = getScenePromptText(index);
+  const isPromptActuallyPending = state.videoStatuses[index] === "prompting" && !existingPrompt;
+  if (isPromptActuallyPending || state.videoStatuses[index] === "generating") {
     throw new Error(`Video #${index + 1} is already generating.`);
   }
 
@@ -1612,26 +1984,29 @@ async function generateVideoForIndex(index) {
     renderSnapshot();
   }
 
-  state.videoStatuses[index] = "prompting";
   state.videoErrors[index] = "";
-  renderFirstFrames();
-  setStatus(`Video Step 1/2: Generating prompt for scene #${index + 1} from scene direction + frame...`);
-
-  let promptText = "";
-  try {
-    promptText = await requestVideoPromptAtIndex(index);
-  } catch (error) {
-    state.videoStatuses[index] = "error";
-    state.videoErrors[index] = normalizePromptText(error?.message || "Failed to generate scene video prompt.");
+  let promptText = existingPrompt;
+  if (!promptText) {
+    state.videoStatuses[index] = "prompting";
     renderFirstFrames();
-    throw error;
+    setStatus(`Video Step 1/2: Generating prompt for scene #${index + 1} from scene direction + frame...`);
+    try {
+      promptText = await requestVideoPromptAtIndex(index);
+    } catch (error) {
+      state.videoStatuses[index] = "error";
+      state.videoErrors[index] = normalizePromptText(error?.message || "Failed to generate scene video prompt.");
+      renderFirstFrames();
+      throw error;
+    }
+  } else {
+    state.videoStatuses[index] = "generating";
   }
 
   state.videoStatuses[index] = "generating";
   renderFirstFrames();
   setStatus(`Video Step 2/2: Generating video for frame #${index + 1} using prompt + frame...`);
   try {
-    const formData = buildVideoFormData(promptText, index);
+    const formData = await buildVideoFormData(promptText, index);
     const data = await createVideoWithFormData(formData, index);
     const finalPrompt = normalizePromptText(data.final_prompt) || promptText;
 
@@ -1684,6 +2059,11 @@ async function generatePromptsSequential() {
   renderFirstFrames();
 
   setStatus("Generating different scene directions and final prompts...");
+  updateAnalysisProgress({
+    directions: { status: "generating", text: "Generating scene directions..." },
+    frames: { status: "waiting", text: "Waiting..." },
+    crop: { status: "waiting", text: "Waiting..." }
+  });
   const reqData = new FormData();
   reqData.append("image", state.imageFile, state.imageFile.name);
   reqData.append("target_market", getTargetMarket());
@@ -1696,6 +2076,9 @@ async function generatePromptsSequential() {
   });
   const data = await readApiResponse(res);
   if (!res.ok) {
+    updateAnalysisProgress({
+      directions: { status: "error", text: "Failed to generate scene directions." }
+    });
     if (data?.direction_debug) logDirectionDebug(data.direction_debug, data.error || "Failed to generate prompts.");
     if (Array.isArray(data?.prompt_debug)) {
       data.prompt_debug.forEach((entry) => {
@@ -1731,6 +2114,9 @@ async function generatePromptsSequential() {
   const directions = Array.isArray(data.directions) ? data.directions : [];
 
   if (scenes.length < count && directions.length < count) {
+    updateAnalysisProgress({
+      directions: { status: "error", text: "Scene direction count is insufficient." }
+    });
     throw new Error("Scene direction generation returned insufficient results.");
   }
 
@@ -1748,6 +2134,23 @@ async function generatePromptsSequential() {
   state.videoStatuses = plans.map(() => "idle");
   state.videoErrors = plans.map(() => "");
   state.sceneVideos = plans.map(() => null);
+  updateAnalysisProgress({
+    directions: { status: "done", text: `Completed ${plans.length} scene directions.` },
+    frames: {
+      status: "waiting",
+      text: `Waiting... (0/${plans.length})`,
+      total: plans.length,
+      done: 0,
+      thumbs: []
+    },
+    crop: {
+      status: "waiting",
+      text: `Waiting... (0/${plans.length})`,
+      total: plans.length,
+      done: 0,
+      thumbs: []
+    }
+  });
   renderPromptPlan();
 }
 
@@ -1767,7 +2170,23 @@ async function runGeneratePromptsFlow() {
     await refreshAuthState().catch(() => {});
     renderSnapshot();
     switchStep(3);
-    setStatus(`Generated ${state.preparedPrompts.length} scene directions and first frames.`);
+    setStatus(`Generated ${state.preparedPrompts.length} scene directions and first frames. Video prompts are generating in background...`);
+
+    void (async () => {
+      const promptBuildResult = await generateVideoPromptsForAllScenes({ force: false });
+      if (promptBuildResult?.failed > 0) {
+        setStatus(
+          `Video prompts generated ${promptBuildResult.total - promptBuildResult.failed}/${promptBuildResult.total}; failed ones can still be generated when clicking Generate Video.`,
+          "error"
+        );
+      } else if (promptBuildResult?.total > 0) {
+        setStatus(`All ${promptBuildResult.total} video prompts are ready.`);
+      }
+      renderFirstFrames();
+    })().catch((error) => {
+      setStatus(`Error: ${error.message}`, "error");
+      renderFirstFrames();
+    });
   } finally {
     hideAnalysisOverlay();
     setBusy(false);
@@ -1809,6 +2228,8 @@ if (tabStep3) {
 imageInput.addEventListener("change", () => {
   state.targetMarket = getTargetMarket();
   state.imageFile = imageInput.files?.[0] || null;
+  state.referenceImagePreviewDataUri = "";
+  state.referenceImagePreviewKey = "";
   state.preparedPrompts = [];
   state.scenePlans = [];
   state.firstFrames = [];
@@ -1827,6 +2248,7 @@ imageInput.addEventListener("change", () => {
 [videoCountInput, targetMarketInput, durationSelect, resolutionSelect, aspectRatioSelect].filter(Boolean).forEach((el) => {
   el.addEventListener("change", () => {
     state.targetMarket = getTargetMarket();
+    state.imageProvider = getSelectedImageProvider();
     state.preparedPrompts = [];
     state.scenePlans = [];
     state.firstFrames = [];
@@ -1841,8 +2263,32 @@ imageInput.addEventListener("change", () => {
   });
 });
 
+if (imageProviderSelect) {
+  imageProviderSelect.addEventListener("change", () => {
+    state.imageProvider = getSelectedImageProvider();
+    state.preparedPrompts = [];
+    state.scenePlans = [];
+    state.firstFrames = [];
+    state.firstFrameStatuses = [];
+    state.firstFrameTasks = [];
+    state.videoStatuses = [];
+    state.videoErrors = [];
+    state.sceneVideos = [];
+    renderPromptPlan();
+    renderFirstFrames();
+    renderSnapshot();
+  });
+}
+
 if (clearDebugBtn) {
   clearDebugBtn.addEventListener("click", () => {
+    clearModelDebug();
+    setStatus("Debug log cleared.");
+  });
+}
+
+if (clearDebugBtnStep1) {
+  clearDebugBtnStep1.addEventListener("click", () => {
     clearModelDebug();
     setStatus("Debug log cleared.");
   });
@@ -2071,6 +2517,47 @@ if (authModal) {
   });
 }
 
+if (closeSceneEditModalBtn) {
+  closeSceneEditModalBtn.addEventListener("click", () => closeSceneEditModal());
+}
+
+if (sceneEditCancelBtn) {
+  sceneEditCancelBtn.addEventListener("click", () => closeSceneEditModal());
+}
+
+if (sceneEditApplyBtn) {
+  sceneEditApplyBtn.addEventListener("click", async () => {
+    const index = Number.parseInt(String(state.sceneEditIndex), 10);
+    if (!Number.isInteger(index) || index < 0 || index >= state.scenePlans.length) {
+      closeSceneEditModal();
+      return;
+    }
+    const nextDirection = normalizePromptText(sceneEditDirectionInput?.value || "");
+    const nextKeywords = parseSceneKeywordsInput(sceneEditKeywordsInput?.value || "");
+    if (!nextDirection) {
+      setStatus("Error: Scene direction is required.", "error");
+      return;
+    }
+
+    try {
+      sceneEditApplyBtn.disabled = true;
+      await regenerateFirstFrame(index, { direction: nextDirection, sceneKeywords: nextKeywords });
+      closeSceneEditModal();
+      setStatus(`Replaced first frame #${index + 1}.`);
+    } catch (error) {
+      setStatus(`Error: ${error.message}`, "error");
+    } finally {
+      sceneEditApplyBtn.disabled = false;
+    }
+  });
+}
+
+if (sceneEditModal) {
+  sceneEditModal.addEventListener("click", (event) => {
+    if (event.target === sceneEditModal) closeSceneEditModal();
+  });
+}
+
 if (openAdminModalBtn) {
   openAdminModalBtn.addEventListener("click", () => openAdminModal());
 }
@@ -2109,6 +2596,7 @@ document.addEventListener("keydown", (event) => {
     closeAdminModal();
     closeHistoryModal();
     closeAccountUsageModal();
+    closeSceneEditModal();
     return;
   }
   if (event.metaKey && String(event.key || "").toLowerCase() === "j") {
@@ -2125,6 +2613,7 @@ renderFirstFrames();
 renderHistory();
 renderModelDebug();
 state.targetMarket = getTargetMarket();
+state.imageProvider = getSelectedImageProvider();
 renderSnapshot();
 applyAdvancedPanelsVisibility();
 setHistoryExpanded(false);

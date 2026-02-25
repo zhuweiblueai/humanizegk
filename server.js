@@ -39,6 +39,7 @@ const AUTH_RATE_LIMIT_WINDOW_MS =
   Number.parseInt(String(process.env.AUTH_RATE_LIMIT_WINDOW_MS || "600000"), 10) || 600_000;
 const AUTH_RATE_LIMIT_MAX = Number.parseInt(String(process.env.AUTH_RATE_LIMIT_MAX || "30"), 10) || 30;
 const XAI_VIDEO_MODEL = process.env.XAI_VIDEO_MODEL || "grok-imagine-video";
+const XAI_IMAGE_MODEL = process.env.XAI_IMAGE_MODEL || "grok-imagine-image";
 const IMAGE_PAD_COLOR = process.env.IMAGE_PAD_COLOR || "FFFFFF";
 const XAI_BASE_URL = "https://api.x.ai/v1";
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -95,6 +96,7 @@ const DEFAULT_PRICE_OPENAI_CHAT_OUTPUT_TOKENS_1K = toNumber(process.env.DEFAULT_
 const DEFAULT_PRICE_OPENAI_IMAGE_EDITS_1024x1024 = toNumber(process.env.DEFAULT_PRICE_OPENAI_IMAGE_EDITS_1024x1024, 0.06);
 const DEFAULT_PRICE_OPENAI_IMAGE_EDITS_1024x1536 = toNumber(process.env.DEFAULT_PRICE_OPENAI_IMAGE_EDITS_1024x1536, 0.09);
 const DEFAULT_PRICE_OPENAI_IMAGE_EDITS_1536x1024 = toNumber(process.env.DEFAULT_PRICE_OPENAI_IMAGE_EDITS_1536x1024, 0.09);
+const DEFAULT_PRICE_XAI_IMAGE_GENERATION = toNumber(process.env.DEFAULT_PRICE_XAI_IMAGE_GENERATION, 0.06);
 const DEFAULT_PRICE_XAI_VIDEO_480P_PER_SECOND = toNumber(process.env.DEFAULT_PRICE_XAI_VIDEO_480P_PER_SECOND, 0.06);
 const DEFAULT_PRICE_XAI_VIDEO_720P_PER_SECOND = toNumber(process.env.DEFAULT_PRICE_XAI_VIDEO_720P_PER_SECOND, 0.084);
 const DEFAULT_PRICE_XAI_VIDEO_INPUT_IMAGE = toNumber(process.env.DEFAULT_PRICE_XAI_VIDEO_INPUT_IMAGE, 0.0024);
@@ -103,6 +105,7 @@ const COST_PRICE_OPENAI_CHAT_OUTPUT_TOKENS_1K = toNumber(process.env.COST_PRICE_
 const COST_PRICE_OPENAI_IMAGE_EDITS_1024x1024 = toNumber(process.env.COST_PRICE_OPENAI_IMAGE_EDITS_1024x1024, 0.04);
 const COST_PRICE_OPENAI_IMAGE_EDITS_1024x1536 = toNumber(process.env.COST_PRICE_OPENAI_IMAGE_EDITS_1024x1536, 0.06);
 const COST_PRICE_OPENAI_IMAGE_EDITS_1536x1024 = toNumber(process.env.COST_PRICE_OPENAI_IMAGE_EDITS_1536x1024, 0.06);
+const COST_PRICE_XAI_IMAGE_GENERATION = toNumber(process.env.COST_PRICE_XAI_IMAGE_GENERATION, 0.04);
 const COST_PRICE_XAI_VIDEO_480P_PER_SECOND = toNumber(process.env.COST_PRICE_XAI_VIDEO_480P_PER_SECOND, 0.05);
 const COST_PRICE_XAI_VIDEO_720P_PER_SECOND = toNumber(process.env.COST_PRICE_XAI_VIDEO_720P_PER_SECOND, 0.07);
 const COST_PRICE_XAI_VIDEO_INPUT_IMAGE = toNumber(process.env.COST_PRICE_XAI_VIDEO_INPUT_IMAGE, 0.002);
@@ -235,6 +238,44 @@ function getDefaultPricingCatalog() {
     }),
     buildPricingCatalogEntry({
       provider: "XAI",
+      operation: "images.edits",
+      model: XAI_IMAGE_MODEL,
+      unitType: "IMAGE",
+      defaultPriceUsdPerUnit: DEFAULT_PRICE_XAI_IMAGE_GENERATION,
+      costPriceUsdPerUnit: COST_PRICE_XAI_IMAGE_GENERATION,
+      note: "xAI image edit with reference image."
+    }),
+    buildPricingCatalogEntry({
+      provider: "XAI",
+      operation: "images.edits",
+      model: null,
+      unitType: "IMAGE",
+      defaultPriceUsdPerUnit: DEFAULT_PRICE_XAI_IMAGE_GENERATION,
+      costPriceUsdPerUnit: COST_PRICE_XAI_IMAGE_GENERATION,
+      note: "Fallback for new xAI image edit model; review required.",
+      reviewOnFallback: true
+    }),
+    buildPricingCatalogEntry({
+      provider: "XAI",
+      operation: "images.generations",
+      model: XAI_IMAGE_MODEL,
+      unitType: "IMAGE",
+      defaultPriceUsdPerUnit: DEFAULT_PRICE_XAI_IMAGE_GENERATION,
+      costPriceUsdPerUnit: COST_PRICE_XAI_IMAGE_GENERATION,
+      note: "Legacy xAI text-to-image fallback."
+    }),
+    buildPricingCatalogEntry({
+      provider: "XAI",
+      operation: "images.generations",
+      model: null,
+      unitType: "IMAGE",
+      defaultPriceUsdPerUnit: DEFAULT_PRICE_XAI_IMAGE_GENERATION,
+      costPriceUsdPerUnit: COST_PRICE_XAI_IMAGE_GENERATION,
+      note: "Fallback for legacy xAI image generation model; review required.",
+      reviewOnFallback: true
+    }),
+    buildPricingCatalogEntry({
+      provider: "XAI",
       operation: "video.generate.480p",
       model: XAI_VIDEO_MODEL,
       unitType: "SECOND",
@@ -321,12 +362,47 @@ function isMalaysiaTargetMarket(value) {
   return normalizeTargetMarket(value).toLowerCase() === "malaysia";
 }
 
-function buildVideoPromptAppend(targetMarket) {
+function getDialoguePacingPlan(durationValue) {
+  const duration = normalizeDuration(durationValue) || 4;
+  if (duration <= 4) return { duration, maxWords: 10, maxLines: 1, beatCount: 2 };
+  if (duration <= 6) return { duration, maxWords: 16, maxLines: 2, beatCount: 2 };
+  if (duration <= 8) return { duration, maxWords: 22, maxLines: 2, beatCount: 3 };
+  if (duration <= 10) return { duration, maxWords: 30, maxLines: 3, beatCount: 3 };
+  return { duration, maxWords: 40, maxLines: 3, beatCount: 4 };
+}
+
+function buildDialoguePacingConstraintText(durationValue) {
+  const plan = getDialoguePacingPlan(durationValue);
+  return `For ${plan.duration}s total runtime, keep spoken dialogue short (max ${plan.maxWords} words total, max ${plan.maxLines} short line(s)), include natural pauses, and use around ${plan.beatCount} clear visual beats with no rushed pacing or rapid-fire cuts.`;
+}
+
+function getUrbanMalayVoiceStyleNote(durationValue = 4) {
+  const plan = getDialoguePacingPlan(durationValue);
+  return [
+    "Note: Use on-camera dialogue only (no voice-over narrator).",
+    `Dialogue budget: max ${plan.maxWords} words total, max ${plan.maxLines} short line(s).`,
+    "Delivery: relaxed, natural, and lively with brief pauses; avoid rushing.",
+    "Tone: energetic for selling, but still friendly and human (not announcer style).",
+    "Language: urban Malay mixed with English, natural for daily Malaysia speech."
+  ].join("\n");
+}
+
+function appendUrbanMalayVoiceStyleNote(promptText, targetMarket, durationValue = 4) {
+  const base = String(promptText || "").trim();
+  if (!isMalaysiaTargetMarket(targetMarket)) return base;
+  const note = getUrbanMalayVoiceStyleNote(durationValue);
+  if (!base) return note;
+  if (base.includes("Use on-camera dialogue only (no voice-over narrator).")) return base;
+  return `${base}\n\n${note}`;
+}
+
+function buildVideoPromptAppend(targetMarket, durationValue = 4) {
   const market = normalizeTargetMarket(targetMarket);
+  const pacing = buildDialoguePacingConstraintText(durationValue);
   if (isMalaysiaTargetMarket(market)) {
-    return "If an input image is provided, use it as the FIRST FRAME (image-to-video). This video targets the TikTok Malaysia market, uses Malay people as characters, and uses urban Malay bahasa, which mixes Malay with English, for voice-over. Do not add on-screen text, logos, or watermarks.";
+    return `If an input image is provided, use it as the FIRST FRAME (image-to-video). This video targets TikTok Malaysia, uses Malay people as characters, and uses urban Malay mixed with English in natural ON-CAMERA dialogue (no voice-over narrator). ${pacing} Keep delivery lively and sales-energetic, but not rushed. Do not add on-screen text, logos, or watermarks.`;
   }
-  return `If an input image is provided, use it as the FIRST FRAME (image-to-video). This video targets the TikTok ${market} market. Use characters, voice-over language, and cultural context that naturally match ${market}. Do not add on-screen text, logos, or watermarks.`;
+  return `If an input image is provided, use it as the FIRST FRAME (image-to-video). This video targets TikTok ${market}. Use characters, spoken dialogue language, and cultural context that naturally match ${market}. ${pacing} Do not add on-screen text, logos, or watermarks.`;
 }
 
 function sanitizeUser(user) {
@@ -1086,6 +1162,20 @@ function toDataUriWithLimit(file, maxBytes = 3_000_000) {
   return toDataUri(file);
 }
 
+function normalizeImageDataUri(value, maxBytes = 2_500_000) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/);
+  if (!match) return null;
+  const mime = String(match[1] || "").toLowerCase();
+  if (!mime.startsWith("image/")) return null;
+  const base64 = String(match[2] || "").replace(/\s+/g, "");
+  if (!base64) return null;
+  const bytes = Buffer.byteLength(base64, "base64");
+  if (!bytes || bytes > maxBytes) return null;
+  return `data:${mime};base64,${base64}`;
+}
+
 function summarizeDataUri(dataUri) {
   const match = String(dataUri || "").match(/^data:([^;]+);base64,(.+)$/);
   if (!match) return null;
@@ -1149,6 +1239,17 @@ function pickOpenAiImageSizeFromAspectRatio(aspectRatioValue) {
   return ratio > 1 ? "1536x1024" : "1024x1536";
 }
 
+function normalizeImageProvider(value) {
+  return String(value || "").trim().toLowerCase() === "xai" ? "xai" : "openai";
+}
+
+function pickImageGenerationSizeFromAspectRatio(aspectRatioValue, provider = "openai") {
+  const normalizedProvider = normalizeImageProvider(provider);
+  const size = pickOpenAiImageSizeFromAspectRatio(aspectRatioValue);
+  if (normalizedProvider === "openai") return size;
+  return normalizeOpenAiImageSizeForPricing(size);
+}
+
 function normalizeOpenAiImageSizeForPricing(size) {
   const normalized = String(size || "").trim().toLowerCase();
   if (normalized === "1024x1024") return "1024x1024";
@@ -1169,6 +1270,10 @@ function normalizeResolutionForPricing(resolution) {
 
 function getXaiVideoPricingOperation(resolution) {
   return `video.generate.${normalizeResolutionForPricing(resolution)}`;
+}
+
+function getXaiImagePricingOperation(mode = "edits") {
+  return String(mode || "").toLowerCase() === "generations" ? "images.generations" : "images.edits";
 }
 
 async function coerceOpenAiImageDataUri(imageData) {
@@ -1515,12 +1620,13 @@ async function generateVideoPromptFromScene({ openaiApiKey, imageFile, scene, du
   const modelDesignRequirement = malaysiaMarket
     ? "Malay model design"
     : `model design suitable for ${normalizedMarket} audience`;
-  const voiceRequirement = malaysiaMarket
-    ? `urban Malay bahasa, which mixes Malay with English, voice-over script paced for ${duration} seconds`
-    : `voice-over script paced for ${duration} seconds in the most natural local language/style for ${normalizedMarket}`;
+  const dialogueRequirement = malaysiaMarket
+    ? `on-camera spoken dialogue in urban Malay bahasa mixed with English, naturally paced for ${duration} seconds`
+    : `on-camera spoken dialogue naturally paced for ${duration} seconds in the most natural local language/style for ${normalizedMarket}`;
+  const pacingConstraint = buildDialoguePacingConstraintText(duration);
   const mandatoryMarketRequirement = malaysiaMarket
-    ? "target TikTok Malaysia, Malay people as characters, voice-over must use urban Malay bahasa, which mixes Malay with English"
-    : `target TikTok ${normalizedMarket}, and use characters + voice-over language + cultural context that naturally fit ${normalizedMarket}`;
+    ? "target TikTok Malaysia, Malay people as characters, on-camera dialogue must use urban Malay bahasa mixed with English, and do NOT use off-screen voice-over narration"
+    : `target TikTok ${normalizedMarket}, and use characters + spoken dialogue language + cultural context that naturally fit ${normalizedMarket}`;
 
   const promptRequestBody = {
     model: AUTO_PROMPT_MODEL,
@@ -1537,7 +1643,7 @@ async function generateVideoPromptFromScene({ openaiApiKey, imageFile, scene, du
           {
             type: "text",
             text:
-              `Convert this scene direction into one final video-generation prompt:\n${directionBrief}\n\nThe final prompt must fit ${duration} seconds and include: 1) video concept and hook, 2) ${modelDesignRequirement}, 3) scene/background/environment, 4) camera and motion plan, 5) ${voiceRequirement}, 6) selling points and CTA, 7) voice age/tone design aligned to the ages described in scene direction/scene_keywords/characters, 8) one explicit line: "Voice-over speaker age: <exact age or tight range>" chosen as the most suitable voice age for this scene and buying persona. If multiple ages exist in the scene, pick the best primary narrator age and state it explicitly. Mandatory constraints: ${mandatoryMarketRequirement}, do NOT reuse the original reference image background/environment, no on-screen text/logos/watermarks. The attached image is the generated first-frame image for this exact scene: use it as the opening-frame reference and preserve opening-shot continuity for composition, characters, pose, clothing details, camera angle, and framing.`
+              `Convert this scene direction into one production-ready video prompt:\n${directionBrief}\n\nRequirements for the final prompt:\n1) Fit exactly ${duration} seconds.\n2) Include concept/hook, ${modelDesignRequirement}, scene/background, camera movement, and clear selling points + CTA.\n3) Use ${dialogueRequirement}.\n4) ${pacingConstraint}\n5) Ask characters to open their mouth and speak naturally on camera with confident commerce energy (not voice-over narration).\n6) Include one explicit line: "On-camera speaker age: <exact age or tight range>" based on scene ages.\n7) Mandatory constraints: ${mandatoryMarketRequirement}, do NOT reuse the original reference image background/environment, no on-screen text/logos/watermarks.\n8) Opening-frame continuity: match the attached generated first-frame image for composition, characters, clothing details, pose, and camera framing.\n9) Keep wording concise and avoid over-dense dialogue.\n\n${malaysiaMarket ? `At the end, append exactly this style note block:\n${getUrbanMalayVoiceStyleNote(duration)}` : ""}`
           },
           {
             type: "image_url",
@@ -1585,7 +1691,11 @@ async function generateVideoPromptFromScene({ openaiApiKey, imageFile, scene, du
     throw err;
   }
 
-  const prompt = extractPromptFromModelResponse(promptCall.data);
+  const prompt = appendUrbanMalayVoiceStyleNote(
+    extractPromptFromModelResponse(promptCall.data),
+    normalizedMarket,
+    duration
+  );
   if (!prompt || prompt === "[object Object]") {
     const err = new Error("Generated video prompt is invalid.");
     err.openaiStatus = 502;
@@ -1757,6 +1867,59 @@ async function callOpenAiImageEdit({
   return { ok: response.ok, status: response.status, data };
 }
 
+async function callXaiImageEdit({ apiKey, body, size }) {
+  let response;
+  try {
+    response = await fetchWithTimeout(
+      `${XAI_BASE_URL}/images/edits`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      },
+      OPENAI_IMAGE_EDIT_TIMEOUT_MS
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      status: 504,
+      data: {
+        error: { message: `xAI image edit request failed: ${String(error.message || error)}` },
+        _network_error: true
+      }
+    };
+  }
+
+  const data = await readJsonFromResponse(response);
+  if (response.ok) {
+    const ctx = requestContext.getStore();
+    if (ctx?.user?.id) {
+      try {
+        await recordUsageEventAndDebit({
+          userId: ctx.user.id,
+          provider: "XAI",
+          operation: getXaiImagePricingOperation("edits"),
+          model: body?.model || XAI_IMAGE_MODEL,
+          unitType: "IMAGE",
+          totalUnits: 1,
+          requestId: data?.id || null,
+          raw: {
+            output_count: Array.isArray(data?.data) ? data.data.length : 0,
+            image_size: normalizeOpenAiImageSizeForPricing(size),
+            route: ctx.route || null
+          }
+        });
+      } catch (error) {
+        console.error("usage_meter_xai_image_error", error.message);
+      }
+    }
+  }
+  return { ok: response.ok, status: response.status, data };
+}
+
 function extractPromptListFromText(rawText) {
   const text = String(rawText || "").trim();
   if (!text) return [];
@@ -1877,7 +2040,7 @@ function normalizePromptEntry(entry) {
     entry.scene || entry.background || entry.environment || entry.setting
   );
   maybePush("Camera and motion plan", entry.camera || entry.motion || entry.camera_plan);
-  maybePush("Malay voice-over script", entry.voiceover || entry.voice_over || entry.script);
+  maybePush("Malay on-camera dialogue script", entry.voiceover || entry.voice_over || entry.script);
   maybePush("Selling points and CTA", entry.selling_points || entry.cta || entry.call_to_action);
 
   if (sections.length) return sections.join("\n");
@@ -2717,11 +2880,15 @@ app.get("/api/admin/videos/:usageEventId", requireAdmin, async (req, res) => {
   });
   if (!row) return res.status(404).json({ error: "Video event not found." });
   const raw = row.raw && typeof row.raw === "object" ? row.raw : {};
-  let inputImageDataUri = raw?.input_image_data_uri || null;
+  let inputImageDataUri =
+    raw?.first_frame_image_data_uri ||
+    raw?.input_image_data_uri ||
+    null;
+  let sourceReferenceImageDataUri = raw?.source_reference_image_data_uri || null;
   let inputImagePreview = raw?.input_image_preview || null;
   let linkedInputImageUsageEventId = null;
 
-  if (!inputImageDataUri) {
+  if (!inputImageDataUri || !sourceReferenceImageDataUri) {
     const inputImageWhere = {
       userId: row.userId,
       provider: "XAI",
@@ -2737,11 +2904,16 @@ app.get("/api/admin/videos/:usageEventId", requireAdmin, async (req, res) => {
     const matchedInputImageEvent =
       inputImageCandidates.find((event) => {
         const eventRaw = event?.raw && typeof event.raw === "object" ? event.raw : null;
-        return eventRaw?.linked_video_usage_event_id === row.id && eventRaw?.input_image_data_uri;
+        return (
+          eventRaw?.linked_video_usage_event_id === row.id &&
+          (eventRaw?.input_image_data_uri || eventRaw?.first_frame_image_data_uri || eventRaw?.source_reference_image_data_uri)
+        );
       }) ||
       inputImageCandidates.find((event) => {
         const eventRaw = event?.raw && typeof event.raw === "object" ? event.raw : null;
-        return Boolean(eventRaw?.input_image_data_uri);
+        return Boolean(
+          eventRaw?.input_image_data_uri || eventRaw?.first_frame_image_data_uri || eventRaw?.source_reference_image_data_uri
+        );
       }) ||
       null;
 
@@ -2750,7 +2922,15 @@ app.get("/api/admin/videos/:usageEventId", requireAdmin, async (req, res) => {
         matchedInputImageEvent?.raw && typeof matchedInputImageEvent.raw === "object"
           ? matchedInputImageEvent.raw
           : {};
-      inputImageDataUri = eventRaw?.input_image_data_uri || null;
+      inputImageDataUri =
+        inputImageDataUri ||
+        eventRaw?.first_frame_image_data_uri ||
+        eventRaw?.input_image_data_uri ||
+        null;
+      sourceReferenceImageDataUri =
+        sourceReferenceImageDataUri ||
+        eventRaw?.source_reference_image_data_uri ||
+        null;
       inputImagePreview = inputImagePreview || eventRaw?.input_image_preview || null;
       linkedInputImageUsageEventId = matchedInputImageEvent.id;
     }
@@ -2774,6 +2954,8 @@ app.get("/api/admin/videos/:usageEventId", requireAdmin, async (req, res) => {
       target_market: raw?.target_market || null,
       final_prompt: raw?.final_prompt || null,
       video_url: raw?.output_video_url || null,
+      source_reference_image_data_uri: sourceReferenceImageDataUri,
+      first_frame_image_data_uri: inputImageDataUri,
       input_image_data_uri: inputImageDataUri,
       input_image_preview: inputImagePreview,
       linked_input_image_usage_event_id: linkedInputImageUsageEventId,
@@ -3156,7 +3338,7 @@ Age requirements:
 - include product-suitable age positioning per scene.
 - explicitly specify ages of all people in each scene.
 
-Hard requirements for every scene: 1) target TikTok Malaysia; 2) Malay people as characters; 3) Bahasa Melayu voice-over; 4) do NOT reuse the original image background/environment; 5) opening shot must be strong and easy to convert into a first-frame image; 6) no on-screen text, logos, or watermarks.
+Hard requirements for every scene: 1) target TikTok Malaysia; 2) Malay people as characters; 3) use Bahasa Melayu/urban Malay spoken dialogue by on-screen characters (no off-screen voice-over narrator); 4) do NOT reuse the original image background/environment; 5) opening shot must be strong and easy to convert into a first-frame image; 6) no on-screen text, logos, or watermarks.
 
 Return strict JSON only as {"directions":[{"direction":"...","scene_keywords":["..."],"characters":"...","script":"..."}]}.`
             },
@@ -3247,7 +3429,7 @@ Return strict JSON only as {"directions":[{"direction":"...","scene_keywords":["
                     `Include product-suitable age positioning for each scene.\n` +
                     `For every person in the scene (main/support/background), specify explicit age in the characters field (exact age or tight range, e.g., 29 or 28-32).\n` +
                     `Duration target: ${duration} seconds.\n` +
-                    `Hard requirements: 1) target TikTok Malaysia; 2) Malay people as characters; 3) Bahasa Melayu voice-over; 4) do NOT reuse the original image background/environment; 5) strong opening shot (easy to turn into a first-frame image); 6) no on-screen text, logos, or watermarks.\n\n` +
+                    `Hard requirements: 1) target TikTok Malaysia; 2) Malay people as characters; 3) use Bahasa Melayu/urban Malay spoken dialogue by on-screen characters (no off-screen voice-over narrator); 4) do NOT reuse the original image background/environment; 5) strong opening shot (easy to turn into a first-frame image); 6) no on-screen text, logos, or watermarks.\n\n` +
                     `Existing scene directions:\n${existing}\n\n` +
                     `Return strict JSON only as {"directions":[{"direction":"...","scene_keywords":["..."],"characters":"...","script":"..."}]} with exactly ${missing} items. scene_keywords must include environment, protagonist, supporting/background people, storyline beat clues, and product-suitable age hints. characters must explicitly include ages for all people mentioned.`
                 },
@@ -3443,7 +3625,7 @@ app.post("/api/regenerate-scene", requireAuth, requirePositiveCredits, requireVe
                 `Prioritize a clearly different product-fit place, protagonist setup, supporting/background people setup, and storyline angle.\n` +
                 `Include product-suitable age positioning and explicit ages for all people in the scene.\n` +
                 `Duration target: ${duration} seconds.\n` +
-                `Hard requirements: 1) target TikTok Malaysia; 2) Malay people as characters; 3) Bahasa Melayu voice-over; 4) do NOT reuse the original image background/environment; 5) strong opening shot suitable for first-frame generation; 6) no on-screen text, logos, or watermarks.\n\n` +
+                `Hard requirements: 1) target TikTok Malaysia; 2) Malay people as characters; 3) use Bahasa Melayu/urban Malay spoken dialogue by on-screen characters (no off-screen voice-over narrator); 4) do NOT reuse the original image background/environment; 5) strong opening shot suitable for first-frame generation; 6) no on-screen text, logos, or watermarks.\n\n` +
                 `Existing scene directions (must avoid overlap):\n${existingList || "(none)"}\n\n` +
                 `Return strict JSON only as {"directions":[{"direction":"...","scene_keywords":["..."],"characters":"...","script":"..."}]} with exactly 1 item. scene_keywords must include environment, protagonist, supporting/background people, storyline beat clues, and product-suitable age hints. characters must explicitly include ages for all people mentioned.`
             },
@@ -3509,6 +3691,7 @@ app.post("/api/regenerate-scene", requireAuth, requirePositiveCredits, requireVe
       });
     }
 
+    const pacingConstraint = buildDialoguePacingConstraintText(duration);
     const promptRequestBody = {
       model: AUTO_PROMPT_MODEL,
       temperature: 0.6,
@@ -3524,7 +3707,7 @@ app.post("/api/regenerate-scene", requireAuth, requirePositiveCredits, requireVe
             {
               type: "text",
               text:
-                `Convert this scene direction into one final video-generation prompt:\n${buildSceneBrief(scene)}\n\nThe final prompt must fit ${duration} seconds and include: 1) video concept and hook, 2) Malay model design, 3) scene/background/environment, 4) camera and motion plan, 5) Bahasa Melayu voice-over script paced for ${duration} seconds, 6) selling points and CTA, 7) voice age/tone design aligned to the ages described in scene direction/scene_keywords/characters, 8) one explicit line: "Voice-over speaker age: <exact age or tight range>" chosen as the most suitable voice age for this scene and buying persona. If multiple ages exist in the scene, pick the best primary narrator age and state it explicitly. Mandatory constraints: target TikTok Malaysia, Malay people as characters, Bahasa Melayu voice-over, do NOT reuse the original reference image background/environment, no on-screen text/logos/watermarks, and ensure the opening frame can match a separately generated first-frame image (image-to-video) while keeping the clothing/product consistent with the reference image.`
+                `Convert this scene direction into one production-ready video prompt:\n${buildSceneBrief(scene)}\n\nRequirements for the final prompt:\n1) Fit exactly ${duration} seconds.\n2) Include concept/hook, Malay model design, scene/background, camera movement, and clear selling points + CTA.\n3) Use on-camera spoken dialogue in urban Malay mixed with English (no off-screen voice-over narrator).\n4) ${pacingConstraint}\n5) Ask characters to open their mouth and speak naturally on camera with confident commerce energy.\n6) Include one explicit line: "On-camera speaker age: <exact age or tight range>" based on scene ages.\n7) Mandatory constraints: target TikTok Malaysia, Malay people as characters, do NOT reuse the original reference image background/environment, no on-screen text/logos/watermarks.\n8) Opening-frame continuity: match the attached reference image for composition, characters, clothing details, pose, and camera framing.\n9) Keep wording concise and avoid over-dense dialogue.\n\nAt the end, append exactly this style note block:\n${getUrbanMalayVoiceStyleNote(duration)}`
             },
             {
               type: "image_url",
@@ -3579,7 +3762,11 @@ app.post("/api/regenerate-scene", requireAuth, requirePositiveCredits, requireVe
       });
     }
 
-    const prompt = extractPromptFromModelResponse(promptCall.data);
+    const prompt = appendUrbanMalayVoiceStyleNote(
+      extractPromptFromModelResponse(promptCall.data),
+      "Malaysia",
+      duration
+    );
     if (!prompt || prompt === "[object Object]") {
       return res.status(502).json({
         error: "Regenerated prompt is invalid.",
@@ -3701,58 +3888,109 @@ function buildFirstFramePrompt(sceneDirection, index, total) {
     "Keep the full outfit fully visible (no cropping), centered with even margins. Sharp focus, clean edges, natural lighting, no motion blur.",
     tag,
     "",
-    "Video plan (use visual parts only; ignore voice-over):",
+    "Video plan (use visual parts only; ignore dialogue lines):",
     clipped
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-async function generateFirstFrameImage({ openaiApiKey, imageFile, sceneDirection, videoPrompt, aspectRatio, index, total }) {
-  const size = pickOpenAiImageSizeFromAspectRatio(aspectRatio);
+async function generateFirstFrameImage({
+  imageProvider = "openai",
+  openaiApiKey,
+  xaiApiKey,
+  imageFile,
+  sceneDirection,
+  videoPrompt,
+  aspectRatio,
+  index,
+  total
+}) {
+  const provider = normalizeImageProvider(imageProvider);
+  const size = pickImageGenerationSizeFromAspectRatio(aspectRatio, provider);
   const prompt = buildFirstFramePrompt(sceneDirection || videoPrompt, index, total);
+  const xaiInputImageUrl = provider === "xai" ? toDataUri(imageFile) : null;
+  if (provider === "xai" && !xaiInputImageUrl) {
+    const err = new Error("xAI image edit requires a valid reference image.");
+    err.modelStatus = 400;
+    throw err;
+  }
+  const requestPreview =
+    provider === "xai"
+      ? {
+          endpoint: "https://api.x.ai/v1/images/edits",
+          authorization: `Bearer ${maskApiKey(xaiApiKey)}`,
+          model: XAI_IMAGE_MODEL,
+          requested_aspect_ratio: String(aspectRatio || "").trim() || "auto",
+          prompt_preview: toPreviewText(prompt, 1200),
+          image: {
+            type: "image_url",
+            url: summarizeDataUri(xaiInputImageUrl)
+          }
+        }
+      : {
+          endpoint: "https://api.openai.com/v1/images/edits",
+          authorization: `Bearer ${maskApiKey(openaiApiKey)}`,
+          model: OPENAI_IMAGE_EDIT_MODEL,
+          size,
+          quality: "auto",
+          input_fidelity: "high",
+          prompt_preview: toPreviewText(prompt, 1200),
+          input_image: summarizeUploadedFile(imageFile)
+        };
 
-  const requestPreview = {
-    endpoint: "https://api.openai.com/v1/images/edits",
-    authorization: `Bearer ${maskApiKey(openaiApiKey)}`,
-    model: OPENAI_IMAGE_EDIT_MODEL,
-    size,
-    quality: "auto",
-    input_fidelity: "high",
-    prompt_preview: toPreviewText(prompt, 1200),
-    input_image: summarizeUploadedFile(imageFile)
-  };
+  const modelCall =
+    provider === "xai"
+      ? await callXaiImageEdit({
+          apiKey: xaiApiKey,
+          body: {
+            model: XAI_IMAGE_MODEL,
+            prompt,
+            image: {
+              type: "image_url",
+              url: xaiInputImageUrl
+            }
+          },
+          size
+        })
+      : await callOpenAiImageEdit({
+          apiKey: openaiApiKey,
+          imageFile,
+          prompt,
+          size,
+          quality: "auto",
+          inputFidelity: "high"
+        });
 
-  const editCall = await callOpenAiImageEdit({
-    apiKey: openaiApiKey,
-    imageFile,
-    prompt,
-    size,
-    quality: "auto",
-    inputFidelity: "high"
-  });
-
-  const coerced = await coerceOpenAiImageDataUri(editCall.data);
+  const coerced = await coerceOpenAiImageDataUri(modelCall.data);
   const responsePreview = {
-    created: editCall.data?.created || null,
+    http_status: modelCall.status || null,
+    created: modelCall.data?.created || null,
     output_type: coerced.outputType,
     output_url: coerced.outputUrl,
-    b64_length: coerced.b64Length
+    b64_length: coerced.b64Length,
+    raw_text_preview: modelCall.data?._raw_text_preview || null
   };
 
-  if (!editCall.ok) {
-    const message = editCall.data?.error?.message || "Failed to generate first-frame image.";
+  if (!modelCall.ok) {
+    const rawPreview = String(modelCall.data?._raw_text_preview || "").replace(/\s+/g, " ").trim();
+    const rawPreviewShort = rawPreview ? (rawPreview.length > 260 ? `${rawPreview.slice(0, 260)}...` : rawPreview) : "";
+    const baseMessage = modelCall.data?.error?.message || "Failed to generate first-frame image.";
+    const message =
+      rawPreviewShort && /non-json response received/i.test(baseMessage)
+        ? `${baseMessage} (HTTP ${modelCall.status}) Raw: ${rawPreviewShort}`
+        : baseMessage;
     const err = new Error(message);
-    err.openaiStatus = editCall.status;
-    err.openaiRaw = editCall.data;
+    err.modelStatus = modelCall.status;
+    err.modelRaw = modelCall.data;
     err.debug = { request: requestPreview, response: responsePreview };
     throw err;
   }
 
   if (!coerced.dataUri) {
     const err = new Error("First-frame image generation returned no usable image.");
-    err.openaiStatus = 502;
-    err.openaiRaw = editCall.data;
+    err.modelStatus = 502;
+    err.modelRaw = modelCall.data;
     err.debug = { request: requestPreview, response: responsePreview };
     throw err;
   }
@@ -3765,8 +4003,8 @@ async function generateFirstFrameImage({ openaiApiKey, imageFile, sceneDirection
     const decoded = decodeDataUri(coerced.dataUri);
     if (!decoded?.buffer) {
       const err = new Error("Failed to decode generated first-frame image for aspect-ratio crop.");
-      err.openaiStatus = 502;
-      err.openaiRaw = editCall.data;
+      err.modelStatus = 502;
+      err.modelRaw = modelCall.data;
       err.debug = { request: requestPreview, response: responsePreview };
       throw err;
     }
@@ -3784,6 +4022,9 @@ async function generateFirstFrameImage({ openaiApiKey, imageFile, sceneDirection
     dataUri: finalDataUri,
     mime: finalMime,
     prompt,
+    size,
+    modelProvider: provider,
+    modelName: provider === "xai" ? XAI_IMAGE_MODEL : OPENAI_IMAGE_EDIT_MODEL,
     debug: {
       request: requestPreview,
       response: {
@@ -3795,11 +4036,16 @@ async function generateFirstFrameImage({ openaiApiKey, imageFile, sceneDirection
 }
 
 app.post("/api/generate-first-frames", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
+  const imageProvider = normalizeImageProvider(req.body.image_provider);
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
+  const xaiApiKey = resolveXaiApiKey(req.body.xai_api_key || req.body.api_key);
   const image = req.file;
   const aspectRatio = String(req.body.aspect_ratio || "auto").trim();
 
-  if (!openaiApiKey) {
+  if (imageProvider === "xai" && !xaiApiKey) {
+    return res.status(400).json({ error: "XAI API key is not configured." });
+  }
+  if (imageProvider === "openai" && !openaiApiKey) {
     return res.status(400).json({ error: "OpenAI API key is not configured." });
   }
   if (!image) {
@@ -3829,7 +4075,9 @@ app.post("/api/generate-first-frames", requireAuth, requirePositiveCredits, requ
     const frames = [];
     for (let i = 0; i < normalizedPrompts.length; i += 1) {
       const result = await generateFirstFrameImage({
+        imageProvider,
         openaiApiKey,
+        xaiApiKey,
         imageFile: image,
         videoPrompt: normalizedPrompts[i],
         aspectRatio,
@@ -3846,22 +4094,29 @@ app.post("/api/generate-first-frames", requireAuth, requirePositiveCredits, requ
     }
 
     return res.json({
-      model: OPENAI_IMAGE_EDIT_MODEL,
-      size: pickOpenAiImageSizeFromAspectRatio(aspectRatio),
+      model_provider: imageProvider,
+      model: frames[0]?.debug?.request?.model || (imageProvider === "xai" ? XAI_IMAGE_MODEL : OPENAI_IMAGE_EDIT_MODEL),
+      size: frames[0]?.debug?.request?.size || pickImageGenerationSizeFromAspectRatio(aspectRatio, imageProvider),
       frames
     });
   } catch (error) {
-    const status = Number.isInteger(error.openaiStatus) ? error.openaiStatus : 500;
+    const status = Number.isInteger(error.modelStatus)
+      ? error.modelStatus
+      : Number.isInteger(error.openaiStatus)
+        ? error.openaiStatus
+        : 500;
     return res.status(status).json({
       error: error.message || "Failed to generate first-frame images.",
-      raw: error.openaiRaw || null,
+      raw: error.modelRaw || error.openaiRaw || null,
       debug: error.debug || null
     });
   }
 });
 
 app.post("/api/generate-first-frame", requireAuth, requirePositiveCredits, requireVerifiedEmail, upload.single("image"), async (req, res) => {
+  const imageProvider = normalizeImageProvider(req.body.image_provider);
   const openaiApiKey = resolveOpenAiApiKey(req.body.openai_api_key);
+  const xaiApiKey = resolveXaiApiKey(req.body.xai_api_key || req.body.api_key);
   const image = req.file;
   const aspectRatio = String(req.body.aspect_ratio || "auto").trim();
   const sceneDirection = String(req.body.scene_direction || "").trim();
@@ -3869,7 +4124,10 @@ app.post("/api/generate-first-frame", requireAuth, requirePositiveCredits, requi
   const index = Number.parseInt(String(req.body.index || ""), 10);
   const total = Number.parseInt(String(req.body.total || ""), 10);
 
-  if (!openaiApiKey) {
+  if (imageProvider === "xai" && !xaiApiKey) {
+    return res.status(400).json({ error: "XAI API key is not configured." });
+  }
+  if (imageProvider === "openai" && !openaiApiKey) {
     return res.status(400).json({ error: "OpenAI API key is not configured." });
   }
   if (!image) {
@@ -3881,7 +4139,9 @@ app.post("/api/generate-first-frame", requireAuth, requirePositiveCredits, requi
 
   try {
     const result = await generateFirstFrameImage({
+      imageProvider,
       openaiApiKey,
+      xaiApiKey,
       imageFile: image,
       sceneDirection,
       videoPrompt,
@@ -3891,18 +4151,23 @@ app.post("/api/generate-first-frame", requireAuth, requirePositiveCredits, requi
     });
 
     return res.json({
-      model: OPENAI_IMAGE_EDIT_MODEL,
-      size: pickOpenAiImageSizeFromAspectRatio(aspectRatio),
+      model_provider: result.modelProvider,
+      model: result.modelName,
+      size: result.size,
       first_frame_data_uri: result.dataUri,
       first_frame_mime: result.mime,
       first_frame_prompt: result.prompt,
       debug: result.debug
     });
   } catch (error) {
-    const status = Number.isInteger(error.openaiStatus) ? error.openaiStatus : 500;
+    const status = Number.isInteger(error.modelStatus)
+      ? error.modelStatus
+      : Number.isInteger(error.openaiStatus)
+        ? error.openaiStatus
+        : 500;
     return res.status(status).json({
       error: error.message || "Failed to generate first-frame image.",
-      raw: error.openaiRaw || null,
+      raw: error.modelRaw || error.openaiRaw || null,
       debug: error.debug || null
     });
   }
@@ -3916,10 +4181,11 @@ app.post("/api/generate-video", requireAuth, requirePositiveCredits, requireVeri
 
   const prompt = String(req.body.prompt || "").trim();
   const targetMarket = normalizeTargetMarket(req.body.target_market);
-  const finalPrompt = `${buildVideoPromptAppend(targetMarket)}\n\n${prompt}`.trim();
   const duration = normalizeDuration(req.body.duration);
+  const finalPrompt = `${buildVideoPromptAppend(targetMarket, duration || 4)}\n\n${prompt}`.trim();
   const resolution = String(req.body.resolution || "480p").trim();
   const hasReferenceImage = Boolean(req.file);
+  const sourceReferenceImageDataUri = normalizeImageDataUri(req.body.source_reference_image_data_uri, 2_000_000);
   const requestedAspectRatio = String(req.body.aspect_ratio || "auto").trim().toLowerCase();
   let effectiveAspectRatio = null;
   let billingEstimate = null;
@@ -4057,6 +4323,7 @@ app.post("/api/generate-video", requireAuth, requirePositiveCredits, requireVeri
         billing_pricing_review_required: billingEstimate?.pricing_review_required || false,
         billing_pricing_review_message: billingEstimate?.pricing_review_message || null,
         image: summarizeUploadedFile(req.file),
+        source_reference_image_preview: summarizeDataUri(sourceReferenceImageDataUri),
         image_pad_color: imagePath ? IMAGE_PAD_COLOR : null
       }
     };
@@ -4096,7 +4363,11 @@ app.post("/api/generate-video", requireAuth, requirePositiveCredits, requireVeri
             image_preprocess: imagePreprocess || null,
             input_image_preview: summarizeUploadedFile(req.file),
             input_image_data_uri: persistedImageDataUri,
-            input_image_persisted: Boolean(persistedImageDataUri)
+            input_image_persisted: Boolean(persistedImageDataUri),
+            first_frame_image_data_uri: persistedImageDataUri,
+            first_frame_image_persisted: Boolean(persistedImageDataUri),
+            source_reference_image_data_uri: sourceReferenceImageDataUri,
+            source_reference_image_persisted: Boolean(sourceReferenceImageDataUri)
           }
         });
         usageEventId = usageEvent?.id || null;
@@ -4117,7 +4388,11 @@ app.post("/api/generate-video", requireAuth, requirePositiveCredits, requireVeri
               linked_video_usage_event_id: usageEventId,
               input_image_preview: summarizeUploadedFile(req.file),
               input_image_data_uri: persistedImageDataUri,
-              input_image_persisted: Boolean(persistedImageDataUri)
+              input_image_persisted: Boolean(persistedImageDataUri),
+              first_frame_image_data_uri: persistedImageDataUri,
+              first_frame_image_persisted: Boolean(persistedImageDataUri),
+              source_reference_image_data_uri: sourceReferenceImageDataUri,
+              source_reference_image_persisted: Boolean(sourceReferenceImageDataUri)
             }
           });
           inputImageUsageEventId = inputImageUsageEvent?.id || null;

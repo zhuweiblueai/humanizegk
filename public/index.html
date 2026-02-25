@@ -62,6 +62,13 @@
             Target Market
             <input id="targetMarketInput" type="text" value="Malaysia" placeholder="Malaysia" required />
           </label>
+          <label>
+            First-Frame Image Model
+            <select id="imageProviderSelect" required>
+              <option value="openai" selected>OpenAI (gpt-image-1)</option>
+              <option value="xai">xAI (grok-imagine-image)</option>
+            </select>
+          </label>
           <div class="triple-grid">
             <label>
               Duration (seconds)
@@ -97,12 +104,19 @@
           </div>
           <button id="generatePromptsBtn" class="secondary-btn" type="button">Generate Prompts</button>
         </form>
+        <section class="result hidden" id="modelDebugSectionStep1">
+          <h2>Model Debug (Requests/Responses)</h2>
+          <div class="history-actions">
+            <button id="clearDebugBtnStep1" class="secondary-btn" type="button">Clear Debug</button>
+          </div>
+          <div id="modelDebugBoxStep1" class="debug-box"></div>
+        </section>
       </section>
 
       <section class="panel hidden" id="step3Panel">
         <section class="result" id="firstFrameSection">
           <h2>Scenes (Frame + Prompt + Video)</h2>
-          <p class="muted">Each scene includes Scene Direction, Scene Keywords, Frame image, Regenerate, Generate Video, Video Prompt, and latest generated video. Press <kbd>⌘</kbd> + <kbd>J</kbd> to show/hide Image Prompt, Video Prompt, and Model Debug.</p>
+          <p class="muted">Each scene includes editable Scene Direction/Keywords (via Regenerate Image), first-frame image, editable Video Prompt, and latest generated video. Press <kbd>⌘</kbd> + <kbd>J</kbd> to show/hide Image Prompt and Model Debug.</p>
           <div id="firstFrameList" class="first-frame-list"></div>
         </section>
 
@@ -132,13 +146,24 @@
         </div>
         <div class="analysis-overlay-content">
           <img id="analysisOverlayImage" class="analysis-overlay-image hidden" alt="uploaded product preview" />
-          <ul class="analysis-overlay-list">
-            <li>🛍️ Detecting product highlights shoppers care about</li>
-            <li>👥 Selecting the highest-conversion audience age group</li>
-            <li>📍 Matching the best-buying scenarios and locations</li>
-            <li>📖 Designing short story hooks that drive action</li>
-            <li>🎬 Preparing conversion-focused first frames and video prompts</li>
-          </ul>
+          <div class="analysis-overlay-right">
+            <div class="analysis-progress-grid">
+              <article class="analysis-progress-card" id="analysisDirectionsCard">
+                <p class="analysis-progress-title">1) Scene Directions</p>
+                <p class="analysis-progress-status" id="analysisDirectionsStatus">Waiting...</p>
+              </article>
+              <article class="analysis-progress-card" id="analysisFramesCard">
+                <p class="analysis-progress-title">2) First Frames</p>
+                <p class="analysis-progress-status" id="analysisFramesStatus">Waiting...</p>
+                <div class="analysis-thumb-grid" id="analysisFramesThumbs"></div>
+              </article>
+              <article class="analysis-progress-card" id="analysisCropCard">
+                <p class="analysis-progress-title">3) Aspect-Ratio Crop</p>
+                <p class="analysis-progress-status" id="analysisCropStatus">Waiting...</p>
+                <div class="analysis-thumb-grid" id="analysisCropThumbs"></div>
+              </article>
+            </div>
+          </div>
         </div>
         <p class="analysis-overlay-foot">Optimizing for TikTok-style engagement and purchase intent. Usually takes 15–30 seconds.</p>
       </div>
@@ -165,7 +190,29 @@
             <button id="authLoginBtn" type="button">Login</button>
             <a id="googleLoginBtn" class="secondary-btn inline-link-btn" href="/api/auth/google">Login with Google</a>
           </div>
-          <p class="muted">After register, verify email first. In dev, verification link is returned by API.</p>
+          <p class="muted">Registration only creates the account. Credit must be granted by Admin before generation.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="sceneEditModal" class="auth-modal hidden" role="dialog" aria-modal="true" aria-label="Edit Scene For Regeneration">
+      <div class="auth-modal-card scene-edit-modal-card">
+        <button id="closeSceneEditModalBtn" class="auth-modal-close" type="button" aria-label="Close scene edit dialog">×</button>
+        <h2>Regenerate Image</h2>
+        <p class="muted">Edit scene direction and scene keywords, then regenerate this scene’s first-frame image.</p>
+        <div class="form-grid">
+          <label>
+            Scene Direction
+            <textarea id="sceneEditDirectionInput" rows="4" placeholder="Describe the scene direction..."></textarea>
+          </label>
+          <label>
+            Scene Keywords (comma/new-line separated)
+            <textarea id="sceneEditKeywordsInput" rows="3" placeholder="e.g. urban park, young Malay woman, friend in background, sunny daytime"></textarea>
+          </label>
+        </div>
+        <div class="history-actions">
+          <button id="sceneEditApplyBtn" type="button">Apply & Regenerate Image</button>
+          <button id="sceneEditCancelBtn" class="secondary-btn" type="button">Cancel</button>
         </div>
       </div>
     </div>
